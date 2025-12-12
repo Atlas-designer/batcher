@@ -181,7 +181,7 @@ export function toCSV(data) {
     return headers.map(h => escapeCSV(row[h] || '')).join(',');
   });
 
-  return [headerLine, ...dataLines].join('\r\n');
+  return [headerLine, ...dataLines].join('\r\n') + '\r\n';
 }
 
 /**
