@@ -174,6 +174,12 @@ function parseTextAsTable(textItems) {
     return { rawRows: [], rowCount: 0, data: null, columns: null };
   }
 
+  // Check if this looks like an EnjoyBenefits-style single applicant PDF
+  const fullText = filtered.join(' ');
+  if (isEnjoyBenefitsPDF(fullText)) {
+    return parseEnjoyBenefitsPDF(filtered);
+  }
+
   // Try to detect rows by looking for structured data
   const rawRows = [];
 
@@ -192,6 +198,155 @@ function parseTextAsTable(textItems) {
     data: null,
     columns: null,
     note: 'PDF data extracted - please verify structure'
+  };
+}
+
+/**
+ * Check if PDF matches EnjoyBenefits Purchase Order format
+ */
+function isEnjoyBenefitsPDF(text) {
+  const indicators = [
+    'purchase order',
+    'name of client',
+    'total gift voucher',
+    'enjoybenefits',
+    'enjoy benefits'
+  ];
+  const lowerText = text.toLowerCase();
+  const matchCount = indicators.filter(ind => lowerText.includes(ind)).length;
+  return matchCount >= 2;
+}
+
+/**
+ * Parse EnjoyBenefits-style Purchase Order PDF
+ * Extracts: Name, Address, Postcode, Email, Amount, PO Number
+ */
+function parseEnjoyBenefitsPDF(textItems) {
+  const fullText = textItems.join(' ');
+  const extracted = {};
+
+  // Extract Purchase Order Number
+  const poMatch = fullText.match(/Purchase\s*Order\s*Number\s*[:\s]*(\d+)/i);
+  if (poMatch) {
+    extracted.purchaseOrderNumber = poMatch[1];
+  }
+
+  // Extract Name of Client (Firstname Surname)
+  const nameMatch = fullText.match(/Name\s*of\s*client\s*[:\s]*([A-Za-z]+)\s+([A-Za-z]+)/i);
+  if (nameMatch) {
+    extracted.firstname = nameMatch[1].trim();
+    extracted.surname = nameMatch[2].trim();
+  }
+
+  // Extract Address - text between "Address :" and "Postcode"
+  const addressMatch = fullText.match(/Address\s*:\s*(.*?)(?=Postcode|Post\s*code)/is);
+  if (addressMatch) {
+    extracted.address = addressMatch[1].trim();
+  }
+
+  // Extract Postcode
+  const postcodeMatch = fullText.match(/Post\s*code\s*:\s*([A-Z0-9]{2,4}\s*[A-Z0-9]{3})/i);
+  if (postcodeMatch) {
+    extracted.postcode = postcodeMatch[1].trim();
+  }
+
+  // Extract Email
+  const emailMatch = fullText.match(/Email\s*address\s*:\s*([^\s]+@[^\s]+)/i);
+  if (emailMatch) {
+    extracted.email = emailMatch[1].trim();
+  }
+
+  // Extract Total gift voucher (LOC Amount)
+  const amountMatch = fullText.match(/Total\s*gift\s*voucher\s*:\s*[£]?\s*([\d,.]+)/i);
+  if (amountMatch) {
+    extracted.amount = amountMatch[1].replace(/,/g, '').trim();
+  }
+
+  // Convert to standard row format for processing
+  // Create a header row and data row
+  const columns = ['Firstname', 'Surname', 'Street1', 'Street2', 'City', 'Postcode', 'Email', 'LOC Amount', 'Purchase Order Number'];
+  const headerRow = columns;
+
+  // Parse address into street1, street2, city if possible
+  let street1 = '', street2 = '', city = '';
+  if (extracted.address) {
+    const addressParts = extracted.address.split(/[,\n]/).map(p => p.trim()).filter(p => p);
+    if (addressParts.length >= 1) street1 = addressParts[0];
+    if (addressParts.length >= 2) street2 = addressParts[1];
+    if (addressParts.length >= 3) city = addressParts[addressParts.length - 1];
+  }
+
+  const dataRow = [
+    extracted.firstname || '',
+    extracted.surname || '',
+    street1,
+    street2,
+    city,
+    extracted.postcode || '',
+    extracted.email || '',
+    extracted.amount || '',
+    extracted.purchaseOrderNumber || ''
+  ];
+
+  return {
+    rawRows: [headerRow, dataRow],
+    rowCount: 2,
+    data: null,
+    columns: null,
+    isParsedPDF: true,
+    pdfType: 'EnjoyBenefits',
+    extractedData: extracted,
+    note: 'EnjoyBenefits PDF parsed - single applicant extracted'
+  };
+}
+
+/**
+ * Parse multiple PDF files and combine into single dataset
+ * Used for combining multiple single-applicant PDFs
+ */
+export async function parseAndCombinePDFs(files) {
+  const allRows = [];
+  let columns = null;
+  const errors = [];
+
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    try {
+      const result = await parseFile(file);
+
+      // For EnjoyBenefits PDFs, we get 2 rows: header and data
+      if (result.isParsedPDF && result.rawRows.length >= 2) {
+        if (!columns) {
+          columns = result.rawRows[0]; // First file sets headers
+        }
+        // Add data row (skip header)
+        allRows.push(result.rawRows[1]);
+      } else if (result.rawRows && result.rawRows.length > 0) {
+        // For other PDFs or files, add all data rows
+        if (!columns && result.rawRows.length > 0) {
+          columns = result.rawRows[0];
+        }
+        for (let j = 1; j < result.rawRows.length; j++) {
+          allRows.push(result.rawRows[j]);
+        }
+      }
+    } catch (error) {
+      errors.push({ file: file.name, error: error.message });
+    }
+  }
+
+  // Combine into final structure
+  const combinedRows = columns ? [columns, ...allRows] : allRows;
+
+  return {
+    rawRows: combinedRows,
+    rowCount: combinedRows.length,
+    data: null,
+    columns: null,
+    combinedFromFiles: files.length,
+    successfulFiles: files.length - errors.length,
+    errors: errors.length > 0 ? errors : null,
+    note: `Combined ${allRows.length} applicants from ${files.length} files`
   };
 }
 

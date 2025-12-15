@@ -7,7 +7,7 @@ import ProcessEditor from './components/ProcessEditor';
 import OutputPreview from './components/OutputPreview';
 import ProcessManager from './components/ProcessManager';
 import ImportDialog from './components/ImportDialog';
-import { parseFile } from './utils/fileParser';
+import { parseFile, parseAndCombinePDFs } from './utils/fileParser';
 import { extractCompanyAndEntity, generateOutputFilename } from './utils/filenameParser';
 import { applyMapping, downloadCSV, OUTPUT_COLUMNS } from './utils/outputFormatter';
 import { getErrorRowNumbers } from './utils/validation';
@@ -142,6 +142,44 @@ export default function App() {
     } catch (err) {
       setError(err.message || 'Failed to parse file');
       console.error('File parsing error:', err);
+    }
+
+    setLoading(false);
+  };
+
+  // Handle combining multiple files (combination mode)
+  const handleCombineFiles = async (files) => {
+    setLoading(true);
+    setError('');
+    setSourceFile({ name: `Combined (${files.length} files)`, isCombined: true });
+    setMatchedProcess(null);
+    setCurrentMapping(null);
+    setOutputData(null);
+    setLivePreviewData(null);
+    setDataConfig(null);
+    setFileQueue([]);
+    setCurrentFileIndex(0);
+
+    try {
+      // Parse and combine all files
+      const result = await parseAndCombinePDFs(files);
+
+      if (result.errors && result.errors.length > 0) {
+        const errorList = result.errors.map(e => `${e.file}: ${e.error}`).join('\n');
+        console.warn('Some files had errors:', errorList);
+      }
+
+      setRawRows(result.rawRows);
+
+      // For combined files, use generic company name or let user specify
+      setDetectedCompany('Combined Batch');
+      setDetectedEntity('');
+
+      // Go to configure step
+      setCurrentStep(STEPS.CONFIGURE);
+    } catch (err) {
+      setError(err.message || 'Failed to combine files');
+      console.error('File combining error:', err);
     }
 
     setLoading(false);
@@ -449,7 +487,7 @@ export default function App() {
 
             {/* Step Content */}
             {currentStep === STEPS.UPLOAD && (
-              <FileUploader onFileSelect={handleFileSelect} disabled={loading} />
+              <FileUploader onFileSelect={handleFileSelect} onCombineFiles={handleCombineFiles} disabled={loading} />
             )}
 
             {currentStep === STEPS.CONFIGURE && rawRows && (

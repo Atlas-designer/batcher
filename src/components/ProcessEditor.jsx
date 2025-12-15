@@ -443,7 +443,7 @@ export default function ProcessEditor({
           </div>
 
           <div className="additional-details-row">
-            <label style={{ fontSize: '0.875rem', minWidth: '140px' }}>Reference Column:</label>
+            <label style={{ fontSize: '0.875rem', minWidth: '140px' }}>Reference/PO Column:</label>
             <select
               value={additionalDetails.referenceColumn}
               onChange={(e) => setAdditionalDetails(prev => ({
@@ -456,6 +456,9 @@ export default function ProcessEditor({
                 <option key={col} value={col}>{col}</option>
               ))}
             </select>
+            <small style={{ marginLeft: '0.5rem', color: 'var(--text-muted)', fontSize: '0.7rem' }}>
+              e.g., Purchase Order Number
+            </small>
           </div>
 
           <div className="additional-details-row">
