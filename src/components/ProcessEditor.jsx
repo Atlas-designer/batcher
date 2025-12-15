@@ -35,6 +35,12 @@ export default function ProcessEditor({
     separator: '/'
   });
 
+  // Output options
+  const [outputOptions, setOutputOptions] = useState({
+    roundLOCAmount: false,
+    fallbackEmail: ''
+  });
+
   // Display name (for user interface only, separate from company detection name)
   const [displayName, setDisplayName] = useState('');
 
@@ -62,6 +68,10 @@ export default function ProcessEditor({
         fixedSuffix: '',
         separator: '/'
       });
+      setOutputOptions(existingMapping.outputOptions || {
+        roundLOCAmount: false,
+        fallbackEmail: ''
+      });
       setDisplayName(existingMapping.displayName || '');
       setEditableCompanyName(existingMapping.companyName || companyName || '');
       setEditableEntity(existingMapping.entity || entity || '');
@@ -76,6 +86,7 @@ export default function ProcessEditor({
       setEditableCompanyName(companyName || '');
       setEditableEntity(entity || '');
       setBenefitProvider('');
+      setOutputOptions({ roundLOCAmount: false, fallbackEmail: '' });
       setIsEditingExisting(false);
       setOriginalProcessId(null);
     }
@@ -87,11 +98,12 @@ export default function ProcessEditor({
       onPreviewUpdate({
         fields: mappings,
         additionalDetails,
+        outputOptions,
         companyName: editableCompanyName,
         entity: editableEntity
       });
     }
-  }, [mappings, additionalDetails, editableCompanyName, editableEntity]);
+  }, [mappings, additionalDetails, outputOptions, editableCompanyName, editableEntity]);
 
   // Handle connecting source to target
   const handleConnect = () => {
@@ -133,6 +145,7 @@ export default function ProcessEditor({
       benefitProvider: benefitProvider || null,
       fields: mappings,
       additionalDetails,
+      outputOptions,
       createdAt: new Date().toISOString(),
       // If editing and saving as new, don't pass the original ID
       // If editing and updating, pass the original ID
@@ -151,7 +164,8 @@ export default function ProcessEditor({
         entity: editableEntity,
         benefitProvider: benefitProvider || null,
         fields: mappings,
-        additionalDetails
+        additionalDetails,
+        outputOptions
       };
       onProceedWithoutSaving(processConfig);
     }
@@ -490,6 +504,54 @@ export default function ProcessEditor({
 
           <div className="additional-details-preview">
             <strong>Preview:</strong> {getAdditionalDetailsPreview()}
+          </div>
+        </div>
+      </div>
+
+      {/* Output Options */}
+      <div className="additional-details-config" style={{ marginTop: '1.5rem' }}>
+        <h4>Output Options</h4>
+        <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
+          Configure output formatting options
+        </p>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          {/* Round LOC Amount */}
+          <label className="checkbox-field">
+            <input
+              type="checkbox"
+              checked={outputOptions.roundLOCAmount}
+              onChange={(e) => setOutputOptions(prev => ({
+                ...prev,
+                roundLOCAmount: e.target.checked
+              }))}
+            />
+            <div>
+              <span>Round LOC Amount up to whole number</span>
+              <small style={{ display: 'block', color: 'var(--text-muted)', fontSize: '0.75rem' }}>
+                Always rounds up (e.g., £149.01 → £150, £149.99 → £150)
+              </small>
+            </div>
+          </label>
+
+          {/* Fallback Email */}
+          <div className="additional-details-row">
+            <label style={{ fontSize: '0.875rem', minWidth: '140px' }}>Email Fill:</label>
+            <div style={{ flex: 1 }}>
+              <input
+                type="email"
+                value={outputOptions.fallbackEmail}
+                onChange={(e) => setOutputOptions(prev => ({
+                  ...prev,
+                  fallbackEmail: e.target.value
+                }))}
+                placeholder="e.g., noemail@company.com"
+                style={{ width: '100%', padding: '0.5rem', border: '1px solid var(--border)', borderRadius: '0.375rem' }}
+              />
+              <small style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
+                If an applicant is missing an email, this address will be used instead
+              </small>
+            </div>
           </div>
         </div>
       </div>

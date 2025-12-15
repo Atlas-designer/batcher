@@ -30,8 +30,10 @@ function sanitizeString(value) {
 
 /**
  * Clean LOC Amount - extract only the numeric value
+ * @param {any} value - The raw value
+ * @param {boolean} roundUp - If true, round up to nearest whole number
  */
-function cleanLOCAmount(value) {
+function cleanLOCAmount(value, roundUp = false) {
   if (!value) return '';
   // Remove currency symbols, letters, and keep only numbers and decimal point
   const cleaned = String(value)
@@ -44,6 +46,12 @@ function cleanLOCAmount(value) {
   // Parse and format as number
   const num = parseFloat(cleaned);
   if (isNaN(num)) return '';
+
+  // Round up to whole number if option is enabled
+  if (roundUp) {
+    return String(Math.ceil(num));
+  }
+
   return num.toFixed(2);
 }
 
@@ -57,6 +65,11 @@ function cleanLOCAmount(value) {
 export function applyMapping(sourceData, mapping, options = {}) {
   const outputRows = [];
   const validationErrors = [];
+
+  // Get output options
+  const outputOptions = mapping.outputOptions || {};
+  const roundLOCAmount = outputOptions.roundLOCAmount || false;
+  const fallbackEmail = outputOptions.fallbackEmail || '';
 
   sourceData.forEach((sourceRow, rowIndex) => {
     const outputRow = {};
@@ -75,7 +88,13 @@ export function applyMapping(sourceData, mapping, options = {}) {
 
       // Special handling for LOC Amount
       if (col.key === 'LOC Amount') {
-        value = cleanLOCAmount(value);
+        value = cleanLOCAmount(value, roundLOCAmount);
+      } else if (col.key === 'Email') {
+        // Apply fallback email if value is empty and fallback is provided
+        value = sanitizeString(value);
+        if (!value && fallbackEmail) {
+          value = fallbackEmail;
+        }
       } else {
         // Sanitize all other string values
         value = sanitizeString(value);
