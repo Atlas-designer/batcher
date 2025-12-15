@@ -3,10 +3,12 @@ import { isSupportedFileType } from '../utils/fileParser';
 
 /**
  * File uploader component with drag-and-drop support
+ * Supports multiple file selection
  */
 export default function FileUploader({ onFileSelect, disabled }) {
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState('');
+  const [selectedFiles, setSelectedFiles] = useState([]);
   const inputRef = useRef(null);
 
   const handleDragOver = (e) => {
@@ -33,7 +35,7 @@ export default function FileUploader({ onFileSelect, disabled }) {
 
     const files = e.dataTransfer?.files;
     if (files && files.length > 0) {
-      validateAndSelectFile(files[0]);
+      validateAndSelectFiles(Array.from(files));
     }
   };
 
@@ -41,19 +43,33 @@ export default function FileUploader({ onFileSelect, disabled }) {
     setError('');
     const files = e.target.files;
     if (files && files.length > 0) {
-      validateAndSelectFile(files[0]);
+      validateAndSelectFiles(Array.from(files));
     }
     // Reset input so same file can be selected again
     e.target.value = '';
   };
 
-  const validateAndSelectFile = (file) => {
-    if (!isSupportedFileType(file.name)) {
-      setError('Unsupported file type. Please use .csv, .xls, .xlsx, or .pdf');
-      return;
+  const validateAndSelectFiles = (files) => {
+    const validFiles = [];
+    const invalidFiles = [];
+
+    files.forEach(file => {
+      if (isSupportedFileType(file.name)) {
+        validFiles.push(file);
+      } else {
+        invalidFiles.push(file.name);
+      }
+    });
+
+    if (invalidFiles.length > 0) {
+      setError(`Unsupported file type(s): ${invalidFiles.join(', ')}. Please use .csv, .xls, .xlsx, or .pdf`);
     }
 
-    onFileSelect(file);
+    if (validFiles.length > 0) {
+      setSelectedFiles(validFiles);
+      // Pass array if multiple, single file if one
+      onFileSelect(validFiles.length === 1 ? validFiles[0] : validFiles);
+    }
   };
 
   const handleClick = () => {
@@ -73,10 +89,13 @@ export default function FileUploader({ onFileSelect, disabled }) {
         style={{ cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1 }}
       >
         <div className="file-uploader-icon">📁</div>
-        <h3>Upload Batch File</h3>
-        <p>Drag and drop your file here, or click to browse</p>
+        <h3>Upload Batch Files</h3>
+        <p>Drag and drop your files here, or click to browse</p>
         <p style={{ marginTop: '0.5rem', fontSize: '0.75rem' }}>
           Supports: .csv, .xls, .xlsx, .pdf
+        </p>
+        <p style={{ marginTop: '0.25rem', fontSize: '0.75rem', color: 'var(--primary)' }}>
+          You can select multiple files at once
         </p>
 
         <input
@@ -85,6 +104,7 @@ export default function FileUploader({ onFileSelect, disabled }) {
           accept=".csv,.xls,.xlsx,.pdf"
           onChange={handleFileChange}
           disabled={disabled}
+          multiple
         />
       </div>
 

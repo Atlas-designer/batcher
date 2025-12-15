@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
+import { exportProcesses } from '../services/processStore';
 
 /**
  * Process Manager - View, edit, and delete saved company processes
@@ -8,10 +9,64 @@ export default function ProcessManager({
   onEdit,
   onDelete,
   onSelect,
+  onImport,
+  onRefresh,
   loading
 }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [exporting, setExporting] = useState(false);
+  const importInputRef = useRef(null);
+
+  // Export processes to JSON file
+  const handleExport = async () => {
+    if (processes.length === 0) {
+      alert('No processes to export');
+      return;
+    }
+
+    setExporting(true);
+    try {
+      const jsonData = await exportProcesses();
+      const blob = new Blob([jsonData], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `batch-processes-${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Export failed:', error);
+      alert('Failed to export processes: ' + error.message);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // Handle import file selection
+  const handleImportClick = () => {
+    if (importInputRef.current) {
+      importInputRef.current.click();
+    }
+  };
+
+  const handleImportFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const content = event.target?.result;
+        if (content && onImport) {
+          onImport(content);
+        }
+      };
+      reader.readAsText(file);
+    }
+    // Reset input
+    e.target.value = '';
+  };
 
   // Filter processes by search term (search both display name and company name)
   const filteredProcesses = processes.filter(p => {
@@ -45,10 +100,36 @@ export default function ProcessManager({
   return (
     <div className="card">
       <div className="card-header">
-        <h3 className="card-title">Saved Processes</h3>
-        <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-          {processes.length} saved
-        </span>
+        <div>
+          <h3 className="card-title">Saved Processes</h3>
+          <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+            {processes.length} saved
+          </span>
+        </div>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <button
+            className="btn btn-secondary"
+            onClick={handleImportClick}
+            title="Import processes from JSON file"
+          >
+            Import
+          </button>
+          <button
+            className="btn btn-secondary"
+            onClick={handleExport}
+            disabled={exporting || processes.length === 0}
+            title="Export all processes to JSON file"
+          >
+            {exporting ? 'Exporting...' : 'Export'}
+          </button>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept=".json"
+            onChange={handleImportFileChange}
+            style={{ display: 'none' }}
+          />
+        </div>
       </div>
 
       {/* Search */}

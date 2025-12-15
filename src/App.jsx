@@ -6,6 +6,7 @@ import DataPreview from './components/DataPreview';
 import ProcessEditor from './components/ProcessEditor';
 import OutputPreview from './components/OutputPreview';
 import ProcessManager from './components/ProcessManager';
+import ImportDialog from './components/ImportDialog';
 import { parseFile } from './utils/fileParser';
 import { extractCompanyAndEntity, generateOutputFilename } from './utils/filenameParser';
 import { applyMapping, downloadCSV, OUTPUT_COLUMNS } from './utils/outputFormatter';
@@ -71,6 +72,14 @@ export default function App() {
   // Editing process
   const [editingProcess, setEditingProcess] = useState(null);
 
+  // Import dialog state
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [importData, setImportData] = useState(null);
+
+  // File queue for multiple file uploads
+  const [fileQueue, setFileQueue] = useState([]);
+  const [currentFileIndex, setCurrentFileIndex] = useState(0);
+
   // Load saved processes on mount
   useEffect(() => {
     if (authenticated) {
@@ -89,8 +98,26 @@ export default function App() {
     setProcessesLoading(false);
   };
 
-  // Handle file selection
-  const handleFileSelect = async (file) => {
+  // Handle file selection (supports multiple files)
+  const handleFileSelect = async (files) => {
+    // Convert to array if single file
+    const fileArray = Array.isArray(files) ? files : [files];
+
+    if (fileArray.length > 1) {
+      // Multiple files - set up queue
+      setFileQueue(fileArray);
+      setCurrentFileIndex(0);
+      await processFile(fileArray[0]);
+    } else {
+      // Single file
+      setFileQueue([]);
+      setCurrentFileIndex(0);
+      await processFile(fileArray[0]);
+    }
+  };
+
+  // Process a single file
+  const processFile = async (file) => {
     setLoading(true);
     setError('');
     setSourceFile(file);
@@ -229,6 +256,32 @@ export default function App() {
     }
   };
 
+  // Handle import - open dialog
+  const handleImport = (jsonContent) => {
+    setImportData(jsonContent);
+    setShowImportDialog(true);
+  };
+
+  // Handle import action from dialog
+  const handleImportAction = async ({ action, data, existingId }) => {
+    try {
+      if (action === 'overwrite' && existingId) {
+        await updateProcess(existingId, data);
+      } else if (action === 'import') {
+        await saveProcess(data);
+      }
+    } catch (err) {
+      console.error('Import action failed:', err);
+    }
+  };
+
+  // Handle import complete
+  const handleImportComplete = () => {
+    setShowImportDialog(false);
+    setImportData(null);
+    loadProcesses();
+  };
+
   // Handle download
   const handleDownload = () => {
     if (outputData && outputFilename) {
@@ -236,8 +289,52 @@ export default function App() {
     }
   };
 
-  // Reset to start
+  // Reset to start or process next file in queue
   const handleReset = () => {
+    // Check if there are more files in the queue
+    if (fileQueue.length > 0 && currentFileIndex < fileQueue.length - 1) {
+      // Process next file
+      const nextIndex = currentFileIndex + 1;
+      setCurrentFileIndex(nextIndex);
+      processFile(fileQueue[nextIndex]);
+    } else {
+      // Full reset
+      setSourceFile(null);
+      setRawRows(null);
+      setSourceData(null);
+      setSourceColumns([]);
+      setHeaderInfoRows([]);
+      setDataConfig(null);
+      setDetectedCompany('');
+      setDetectedEntity('');
+      setMatchedProcess(null);
+      setSelectedProcessId('');
+      setCurrentMapping(null);
+      setOutputData(null);
+      setValidationErrors([]);
+      setOutputFilename('');
+      setLivePreviewData(null);
+      setCurrentStep(STEPS.UPLOAD);
+      setError('');
+      setFileQueue([]);
+      setCurrentFileIndex(0);
+    }
+  };
+
+  // Skip current file and go to next (or reset if no more)
+  const handleSkipFile = () => {
+    if (fileQueue.length > 0 && currentFileIndex < fileQueue.length - 1) {
+      const nextIndex = currentFileIndex + 1;
+      setCurrentFileIndex(nextIndex);
+      processFile(fileQueue[nextIndex]);
+    } else {
+      // No more files, reset
+      handleFullReset();
+    }
+  };
+
+  // Force full reset (clear queue too)
+  const handleFullReset = () => {
     setSourceFile(null);
     setRawRows(null);
     setSourceData(null);
@@ -255,6 +352,8 @@ export default function App() {
     setLivePreviewData(null);
     setCurrentStep(STEPS.UPLOAD);
     setError('');
+    setFileQueue([]);
+    setCurrentFileIndex(0);
   };
 
   // Handle process selection change
@@ -496,6 +595,33 @@ export default function App() {
 
             {currentStep === STEPS.PREVIEW && outputData && (
               <>
+                {/* File Queue Indicator */}
+                {fileQueue.length > 1 && (
+                  <div className="card" style={{ marginBottom: '1rem', background: 'var(--primary)', color: 'white' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>
+                        Processing file {currentFileIndex + 1} of {fileQueue.length}
+                      </span>
+                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <button
+                          className="btn"
+                          style={{ background: 'rgba(255,255,255,0.2)', color: 'white', border: 'none' }}
+                          onClick={handleSkipFile}
+                        >
+                          Skip to Next
+                        </button>
+                        <button
+                          className="btn"
+                          style={{ background: 'rgba(255,255,255,0.2)', color: 'white', border: 'none' }}
+                          onClick={handleFullReset}
+                        >
+                          Cancel Queue
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Company info */}
                 <div className="card" style={{ marginBottom: '1rem' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
@@ -525,7 +651,9 @@ export default function App() {
                         Edit Mapping
                       </button>
                       <button className="btn btn-secondary" onClick={handleReset}>
-                        Process Another File
+                        {fileQueue.length > 1 && currentFileIndex < fileQueue.length - 1
+                          ? `Next File (${fileQueue.length - currentFileIndex - 1} remaining)`
+                          : 'Process Another File'}
                       </button>
                     </div>
                   </div>
@@ -568,8 +696,19 @@ export default function App() {
               }
             }}
             onDelete={handleDeleteProcess}
+            onImport={handleImport}
+            onRefresh={loadProcesses}
           />
         )}
+
+        {/* Import Dialog */}
+        <ImportDialog
+          isOpen={showImportDialog}
+          importData={importData}
+          existingProcesses={processes}
+          onComplete={handleImportAction}
+          onCancel={handleImportComplete}
+        />
       </main>
     </div>
   );
