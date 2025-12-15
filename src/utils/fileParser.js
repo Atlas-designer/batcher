@@ -225,14 +225,35 @@ function parseEnjoyBenefitsPDF(textItems) {
   const fullText = textItems.join(' ');
   const extracted = {};
 
-  // Extract Purchase Order Number
-  const poMatch = fullText.match(/Purchase\s*Order\s*Number\s*[:\s]*(\d+)/i);
-  if (poMatch) {
+  // Extract Purchase Order Number - try multiple patterns
+  // Pattern 1: "Purchase Order Number" followed by number (with possible text between)
+  let poMatch = fullText.match(/Purchase\s*Order\s*Number\s*[:\s]*(\d{5,})/i);
+  if (!poMatch) {
+    // Pattern 2: Look for 5-6 digit number after "Order Number"
+    poMatch = fullText.match(/Order\s*Number\s*[:\s]*(\d{5,})/i);
+  }
+  if (!poMatch) {
+    // Pattern 3: Look in the text items array for the number right after "Purchase Order Number"
+    for (let i = 0; i < textItems.length; i++) {
+      if (textItems[i].toLowerCase().includes('purchase order number')) {
+        // Look at the next few items for a number
+        for (let j = i + 1; j < Math.min(i + 5, textItems.length); j++) {
+          const numMatch = textItems[j].match(/^(\d{5,})$/);
+          if (numMatch) {
+            extracted.purchaseOrderNumber = numMatch[1];
+            break;
+          }
+        }
+        break;
+      }
+    }
+  }
+  if (poMatch && !extracted.purchaseOrderNumber) {
     extracted.purchaseOrderNumber = poMatch[1];
   }
 
-  // Extract Name of Client (Firstname Surname)
-  const nameMatch = fullText.match(/Name\s*of\s*client\s*[:\s]*([A-Za-z]+)\s+([A-Za-z]+)/i);
+  // Extract Name of Client (Firstname Surname) - handle hyphenated names too
+  const nameMatch = fullText.match(/Name\s*of\s*client\s*[:\s]*([A-Za-z\-']+)\s+([A-Za-z\-']+)/i);
   if (nameMatch) {
     extracted.firstname = nameMatch[1].trim();
     extracted.surname = nameMatch[2].trim();
@@ -244,8 +265,12 @@ function parseEnjoyBenefitsPDF(textItems) {
     extracted.address = addressMatch[1].trim();
   }
 
-  // Extract Postcode
-  const postcodeMatch = fullText.match(/Post\s*code\s*:\s*([A-Z0-9]{2,4}\s*[A-Z0-9]{3})/i);
+  // Extract Postcode - more flexible pattern
+  let postcodeMatch = fullText.match(/Post\s*code\s*:\s*([A-Z]{1,2}\d{1,2}[A-Z]?\s*\d[A-Z]{2})/i);
+  if (!postcodeMatch) {
+    // Try alternative: look for UK postcode pattern after "Postcode"
+    postcodeMatch = fullText.match(/Postcode\s*[:\s]*([A-Z0-9]{2,4}\s*[A-Z0-9]{3})/i);
+  }
   if (postcodeMatch) {
     extracted.postcode = postcodeMatch[1].trim();
   }
