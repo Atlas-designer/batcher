@@ -9,6 +9,8 @@ export default function PasswordDialog({
   fileName,
   companyName,
   existingPasswords = [],
+  isModernEncryption = false,
+  errorMessage = '',
   onSubmit,
   onCancel
 }) {
@@ -42,7 +44,26 @@ export default function PasswordDialog({
             The file <strong>{fileName}</strong> is password protected.
           </p>
 
-          {hasExistingPasswords && (
+          {/* Modern encryption warning */}
+          {isModernEncryption && (
+            <div style={{
+              background: 'rgba(251, 191, 36, 0.1)',
+              border: '1px solid #f59e0b',
+              borderRadius: '0.375rem',
+              padding: '0.75rem',
+              marginBottom: '1rem'
+            }}>
+              <p style={{ fontSize: '0.875rem', color: '#b45309', marginBottom: '0.5rem' }}>
+                <strong>Note:</strong> This file uses modern Excel encryption which has limited support.
+              </p>
+              <p style={{ fontSize: '0.8rem', color: '#92400e' }}>
+                If the password doesn't work, try opening the file in Excel and saving it as a new file
+                without password protection, or save as an older .xls format.
+              </p>
+            </div>
+          )}
+
+          {hasExistingPasswords && !isModernEncryption && (
             <div style={{
               background: 'rgba(239, 68, 68, 0.1)',
               border: '1px solid var(--danger)',
@@ -53,6 +74,20 @@ export default function PasswordDialog({
               <p style={{ fontSize: '0.875rem', color: 'var(--danger)' }}>
                 The saved password(s) for <strong>{companyName}</strong> didn't work.
                 Please enter the correct password below.
+              </p>
+            </div>
+          )}
+
+          {errorMessage && (
+            <div style={{
+              background: 'rgba(239, 68, 68, 0.1)',
+              border: '1px solid var(--danger)',
+              borderRadius: '0.375rem',
+              padding: '0.75rem',
+              marginBottom: '1rem'
+            }}>
+              <p style={{ fontSize: '0.875rem', color: 'var(--danger)' }}>
+                {errorMessage}
               </p>
             </div>
           )}

@@ -88,6 +88,8 @@ export default function App() {
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [pendingPasswordFile, setPendingPasswordFile] = useState(null);
   const [existingPasswords, setExistingPasswords] = useState([]);
+  const [isModernEncryption, setIsModernEncryption] = useState(false);
+  const [passwordError, setPasswordError] = useState('');
 
   // Load saved processes on mount
   useEffect(() => {
@@ -173,6 +175,8 @@ export default function App() {
 
         setPendingPasswordFile(file);
         setExistingPasswords([...savedPasswords, ...tempPasswords]);
+        setIsModernEncryption(err.isModernEncryption || false);
+        setPasswordError('');
         setShowPasswordDialog(true);
         setLoading(false);
         return;
@@ -188,6 +192,7 @@ export default function App() {
   // Handle password submission from dialog
   const handlePasswordSubmit = async ({ password, saveOption }) => {
     setShowPasswordDialog(false);
+    setPasswordError('');
 
     if (!pendingPasswordFile) return;
 
@@ -214,21 +219,28 @@ export default function App() {
 
       setPendingPasswordFile(null);
       setExistingPasswords([]);
+      setIsModernEncryption(false);
+      setPasswordError('');
 
       // Go to configure step
       setCurrentStep(STEPS.CONFIGURE);
     } catch (err) {
       if (err.code === 'PASSWORD_REQUIRED') {
         // Wrong password - show dialog again
-        setError('Incorrect password. Please try again.');
         const savedPasswords = await getPasswordsForCompany(company);
         const tempPasswords = getTempPasswords(company);
         setExistingPasswords([...savedPasswords, ...tempPasswords, password]);
+        setIsModernEncryption(err.isModernEncryption || false);
+        setPasswordError(err.isModernEncryption
+          ? 'The password could not decrypt the file. This may be due to modern Excel encryption - see note above.'
+          : 'Incorrect password. Please try again.');
         setShowPasswordDialog(true);
       } else {
         setError(err.message || 'Failed to parse file');
         setPendingPasswordFile(null);
         setExistingPasswords([]);
+        setIsModernEncryption(false);
+        setPasswordError('');
       }
     }
     setLoading(false);
@@ -239,6 +251,8 @@ export default function App() {
     setShowPasswordDialog(false);
     setPendingPasswordFile(null);
     setExistingPasswords([]);
+    setIsModernEncryption(false);
+    setPasswordError('');
   };
 
   // Handle combining multiple files (combination mode)
@@ -859,6 +873,8 @@ export default function App() {
           fileName={pendingPasswordFile?.name || ''}
           companyName={detectedCompany}
           existingPasswords={existingPasswords}
+          isModernEncryption={isModernEncryption}
+          errorMessage={passwordError}
           onSubmit={handlePasswordSubmit}
           onCancel={handlePasswordCancel}
         />

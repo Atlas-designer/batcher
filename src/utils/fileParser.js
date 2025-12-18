@@ -57,6 +57,11 @@ function parseCSV(file) {
  * Parse Excel file - returns raw rows
  * @param {File} file - The Excel file to parse
  * @param {string|string[]} password - Optional password(s) to try
+ *
+ * Note: SheetJS community edition has LIMITED password support.
+ * It only works with older XLS encryption, not modern XLSX encryption.
+ * For modern encrypted files, user may need to manually decrypt or
+ * save as unprotected from Excel.
  */
 function parseExcel(file, password = null) {
   return new Promise((resolve, reject) => {
@@ -90,12 +95,9 @@ function parseExcel(file, password = null) {
             break; // Success, stop trying passwords
           } catch (err) {
             lastError = err;
-            // Check if it's a password error
-            if (err.message && (
-              err.message.includes('password') ||
-              err.message.includes('encrypted') ||
-              err.message.includes('Password')
-            )) {
+            console.log('Excel parse attempt failed:', err.message);
+            // Check if it's a password/encryption error - continue trying
+            if (isEncryptionError(err)) {
               continue; // Try next password
             }
             // Other error, stop trying
@@ -105,14 +107,14 @@ function parseExcel(file, password = null) {
 
         if (!workbook) {
           // Check if the file is password protected
-          if (lastError && (
-            lastError.message.includes('password') ||
-            lastError.message.includes('encrypted') ||
-            lastError.message.includes('Password')
-          )) {
+          if (lastError && isEncryptionError(lastError)) {
             const error = new Error('PASSWORD_REQUIRED');
             error.code = 'PASSWORD_REQUIRED';
             error.originalMessage = lastError.message;
+            // Check if it's likely a modern encryption issue
+            error.isModernEncryption = lastError.message.includes('ECMA-376') ||
+              lastError.message.includes('agile') ||
+              lastError.message.includes('Unsupported');
             reject(error);
             return;
           }
@@ -139,15 +141,15 @@ function parseExcel(file, password = null) {
           usedPassword: usedPassword // Include which password worked
         });
       } catch (error) {
+        console.log('Excel parsing error:', error.message);
         // Check if it's a password error
-        if (error.message && (
-          error.message.includes('password') ||
-          error.message.includes('encrypted') ||
-          error.message.includes('Password')
-        )) {
+        if (isEncryptionError(error)) {
           const pwError = new Error('PASSWORD_REQUIRED');
           pwError.code = 'PASSWORD_REQUIRED';
           pwError.originalMessage = error.message;
+          pwError.isModernEncryption = error.message.includes('ECMA-376') ||
+            error.message.includes('agile') ||
+            error.message.includes('Unsupported');
           reject(pwError);
           return;
         }
@@ -161,6 +163,21 @@ function parseExcel(file, password = null) {
 
     reader.readAsArrayBuffer(file);
   });
+}
+
+/**
+ * Check if an error is related to encryption/password
+ */
+function isEncryptionError(err) {
+  if (!err || !err.message) return false;
+  const msg = err.message.toLowerCase();
+  return msg.includes('password') ||
+    msg.includes('encrypted') ||
+    msg.includes('encryption') ||
+    msg.includes('ecma-376') ||
+    msg.includes('agile') ||
+    msg.includes('cfb') ||
+    msg.includes('unsupported encryption');
 }
 
 /**
