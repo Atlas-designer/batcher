@@ -137,6 +137,13 @@ export default function App() {
       setDetectedCompany(company);
       setDetectedEntity(entity);
 
+      // Try to find a matching process early to get saved startRow
+      const earlyMatch = await findProcessByCompany(company);
+      if (earlyMatch) {
+        setMatchedProcess(earlyMatch);
+        setSelectedProcessId(earlyMatch.id);
+      }
+
       // Go to configure step
       setCurrentStep(STEPS.CONFIGURE);
     } catch (err) {
@@ -505,6 +512,16 @@ export default function App() {
                       </span>
                     )}
                   </p>
+                  {matchedProcess && (
+                    <p style={{ color: 'var(--success)', marginTop: '0.5rem' }}>
+                      Matched to saved process: <strong>{matchedProcess.displayName || matchedProcess.companyName}</strong>
+                      {matchedProcess.dataConfig?.startRow && (
+                        <span style={{ marginLeft: '0.5rem', fontSize: '0.875rem' }}>
+                          (Row {matchedProcess.dataConfig.startRow} saved)
+                        </span>
+                      )}
+                    </p>
+                  )}
                 </div>
 
                 {/* Data Configurator */}
@@ -514,6 +531,7 @@ export default function App() {
                   existingConfig={dataConfig}
                   detectedCompany={detectedCompany}
                   detectedEntity={detectedEntity}
+                  suggestedStartRow={matchedProcess?.dataConfig?.startRow}
                 />
               </>
             )}

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { processRawData, filterByDateRange, detectDateColumns } from '../utils/fileParser';
+import { processRawData, filterByDateRange, detectDateColumns, detectFirstDataRow } from '../utils/fileParser';
 import { cleanCompanyName } from '../utils/filenameParser';
 
 /**
@@ -11,10 +11,22 @@ export default function DataConfigurator({
   onConfigured,
   existingConfig,
   detectedCompany,
-  detectedEntity
+  detectedEntity,
+  suggestedStartRow  // From matched process's saved dataConfig
 }) {
+  // Determine initial start row: 1) existing config, 2) suggested from process, 3) auto-detect, 4) default to 2
+  const getInitialStartRow = () => {
+    if (existingConfig?.startRow) return existingConfig.startRow;
+    if (suggestedStartRow) return suggestedStartRow;
+    if (rawRows && rawRows.length > 0) return detectFirstDataRow(rawRows);
+    return 2;
+  };
+
   // Row configuration - only need to specify where applicant data starts
-  const [startRow, setStartRow] = useState(existingConfig?.startRow || 2);
+  const [startRow, setStartRow] = useState(getInitialStartRow());
+  const [startRowSource, setStartRowSource] = useState(
+    existingConfig?.startRow ? 'existing' : (suggestedStartRow ? 'saved' : 'auto')
+  );
   const [endRow, setEndRow] = useState(existingConfig?.endRow || '');
   const [useEndRow, setUseEndRow] = useState(!!existingConfig?.endRow);
 
@@ -147,13 +159,26 @@ export default function DataConfigurator({
         <div>
           <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>
             First Applicant Row
+            {startRowSource === 'saved' && (
+              <span style={{ fontWeight: 'normal', color: 'var(--success)', marginLeft: '0.5rem', fontSize: '0.75rem' }}>
+                (remembered from process)
+              </span>
+            )}
+            {startRowSource === 'auto' && (
+              <span style={{ fontWeight: 'normal', color: 'var(--primary)', marginLeft: '0.5rem', fontSize: '0.75rem' }}>
+                (auto-detected)
+              </span>
+            )}
           </label>
           <input
             type="number"
             min="2"
             max={rawRows.length}
             value={startRow}
-            onChange={(e) => setStartRow(Math.max(2, parseInt(e.target.value) || 2))}
+            onChange={(e) => {
+              setStartRow(Math.max(2, parseInt(e.target.value) || 2));
+              setStartRowSource('manual');
+            }}
             style={{ width: '100%', padding: '0.5rem', border: '1px solid var(--border)', borderRadius: '0.375rem' }}
           />
           <small style={{ color: 'var(--text-muted)' }}>

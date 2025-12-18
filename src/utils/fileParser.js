@@ -541,3 +541,85 @@ export function isSupportedFileType(filename) {
   const supported = ['csv', 'xls', 'xlsx', 'pdf'];
   return supported.includes(getFileExtension(filename));
 }
+
+/**
+ * Auto-detect the first row containing applicant data
+ * Looks for rows that contain name-like and/or email-like values
+ * Returns the row number (1-indexed) or 2 as default
+ */
+export function detectFirstDataRow(rawRows) {
+  if (!rawRows || rawRows.length < 2) return 2;
+
+  // Patterns to identify data rows
+  const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const namePattern = /^[A-Za-z][A-Za-z\-'\s]{1,30}$/; // Simple name pattern
+  const postcodePattern = /^[A-Z]{1,2}\d{1,2}[A-Z]?\s*\d[A-Z]{2}$/i; // UK postcode
+
+  // Header-like terms to skip (case insensitive)
+  const headerTerms = [
+    'firstname', 'first name', 'surname', 'last name', 'email', 'address',
+    'postcode', 'post code', 'city', 'county', 'amount', 'value', 'date',
+    'reference', 'order', 'employee', 'name', 'street', 'town', 'phone',
+    'telephone', 'mobile', 'company', 'department', 'title', 'mr', 'mrs', 'miss'
+  ];
+
+  // Check each row starting from row 1
+  for (let i = 0; i < Math.min(rawRows.length, 20); i++) {
+    const row = rawRows[i];
+    if (!row || !Array.isArray(row)) continue;
+
+    // Count indicators that suggest this is a data row (not headers)
+    let dataIndicators = 0;
+    let headerIndicators = 0;
+    let hasEmail = false;
+    let hasNameLikeValues = 0;
+    let hasPostcode = false;
+
+    for (const cell of row) {
+      if (!cell) continue;
+      const value = String(cell).trim();
+      const lowerValue = value.toLowerCase();
+
+      // Check if this looks like a header term
+      if (headerTerms.some(term => lowerValue === term || lowerValue.includes(term))) {
+        headerIndicators++;
+      }
+
+      // Check for email
+      if (emailPattern.test(value)) {
+        hasEmail = true;
+        dataIndicators++;
+      }
+
+      // Check for UK postcode
+      if (postcodePattern.test(value)) {
+        hasPostcode = true;
+        dataIndicators++;
+      }
+
+      // Check for name-like values (capitalized words, not too short, not too long)
+      if (namePattern.test(value) && value.length > 2 && value.length < 25) {
+        // Make sure it's not a common header term
+        if (!headerTerms.some(term => lowerValue === term)) {
+          hasNameLikeValues++;
+        }
+      }
+    }
+
+    // If this row has more header terms than data indicators, it's probably a header row
+    if (headerIndicators > 2) continue;
+
+    // If we found an email or postcode, this is likely a data row
+    if (hasEmail || hasPostcode) {
+      return i + 1; // Convert to 1-indexed row number
+    }
+
+    // If we have multiple name-like values and few header indicators, likely data
+    if (hasNameLikeValues >= 2 && headerIndicators <= 1) {
+      return i + 1;
+    }
+  }
+
+  // Default to row 2 if no clear data row found
+  return 2;
+}
