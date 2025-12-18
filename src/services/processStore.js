@@ -247,3 +247,104 @@ export async function importProcesses(jsonString) {
     return { success: false, error: error.message };
   }
 }
+
+// ==================== Password Management ====================
+
+/**
+ * Get saved passwords for a company
+ * Returns array of passwords (can have multiple)
+ */
+export async function getPasswordsForCompany(companyName) {
+  const process = await findProcessByCompany(companyName);
+  if (process && process.passwords) {
+    return Array.isArray(process.passwords) ? process.passwords : [process.passwords];
+  }
+  return [];
+}
+
+/**
+ * Save password for a company
+ * @param {string} companyName - The company name
+ * @param {string} password - The password to save
+ * @param {string} mode - 'save' (new), 'overwrite' (replace all), 'additional' (add to list)
+ */
+export async function savePasswordForCompany(companyName, password, mode = 'save') {
+  const process = await findProcessByCompany(companyName);
+
+  if (!process) {
+    // No process exists yet - we'll save it when the process is created
+    // For now, store in a temporary location
+    const tempKey = 'batch_formatter_temp_passwords';
+    const tempData = JSON.parse(localStorage.getItem(tempKey) || '{}');
+    const normalized = companyName.toLowerCase();
+
+    if (mode === 'additional' && tempData[normalized]) {
+      const existing = Array.isArray(tempData[normalized]) ? tempData[normalized] : [tempData[normalized]];
+      if (!existing.includes(password)) {
+        tempData[normalized] = [...existing, password];
+      }
+    } else {
+      tempData[normalized] = [password];
+    }
+
+    localStorage.setItem(tempKey, JSON.stringify(tempData));
+    return { saved: true, temporary: true };
+  }
+
+  // Process exists - update it with the password
+  let passwords = [];
+
+  if (mode === 'overwrite' || mode === 'save') {
+    // Replace all passwords with the new one
+    passwords = [password];
+  } else if (mode === 'additional') {
+    // Add to existing passwords
+    const existing = process.passwords
+      ? (Array.isArray(process.passwords) ? process.passwords : [process.passwords])
+      : [];
+    if (!existing.includes(password)) {
+      passwords = [...existing, password];
+    } else {
+      passwords = existing;
+    }
+  }
+
+  await updateProcess(process.id, { passwords });
+  return { saved: true, processId: process.id };
+}
+
+/**
+ * Remove a password from a company's saved passwords
+ */
+export async function removePasswordFromCompany(companyName, passwordToRemove) {
+  const process = await findProcessByCompany(companyName);
+  if (!process || !process.passwords) return false;
+
+  const existing = Array.isArray(process.passwords) ? process.passwords : [process.passwords];
+  const filtered = existing.filter(p => p !== passwordToRemove);
+
+  await updateProcess(process.id, { passwords: filtered.length > 0 ? filtered : null });
+  return true;
+}
+
+/**
+ * Get temporary passwords (for companies without saved processes yet)
+ */
+export function getTempPasswords(companyName) {
+  const tempKey = 'batch_formatter_temp_passwords';
+  const tempData = JSON.parse(localStorage.getItem(tempKey) || '{}');
+  const normalized = companyName.toLowerCase();
+  const passwords = tempData[normalized];
+  return passwords ? (Array.isArray(passwords) ? passwords : [passwords]) : [];
+}
+
+/**
+ * Clear temporary passwords for a company (called after process is saved)
+ */
+export function clearTempPasswords(companyName) {
+  const tempKey = 'batch_formatter_temp_passwords';
+  const tempData = JSON.parse(localStorage.getItem(tempKey) || '{}');
+  const normalized = companyName.toLowerCase();
+  delete tempData[normalized];
+  localStorage.setItem(tempKey, JSON.stringify(tempData));
+}

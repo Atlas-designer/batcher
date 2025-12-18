@@ -4,8 +4,10 @@ import Papa from 'papaparse';
 /**
  * Parse uploaded file and return RAW data (all rows, no header assumption)
  * Supports: .csv, .xls, .xlsx, .pdf
+ * @param {File} file - The file to parse
+ * @param {string|string[]} password - Optional password(s) to try for encrypted files
  */
-export async function parseFile(file) {
+export async function parseFile(file, password = null) {
   const extension = file.name.split('.').pop().toLowerCase();
 
   switch (extension) {
@@ -13,7 +15,7 @@ export async function parseFile(file) {
       return parseCSV(file);
     case 'xls':
     case 'xlsx':
-      return parseExcel(file);
+      return parseExcel(file, password);
     case 'pdf':
       return parsePDF(file);
     default:
@@ -53,15 +55,69 @@ function parseCSV(file) {
 
 /**
  * Parse Excel file - returns raw rows
+ * @param {File} file - The Excel file to parse
+ * @param {string|string[]} password - Optional password(s) to try
  */
-function parseExcel(file) {
+function parseExcel(file, password = null) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
 
     reader.onload = (e) => {
       try {
         const data = new Uint8Array(e.target.result);
-        const workbook = XLSX.read(data, { type: 'array' });
+
+        // Build read options
+        const readOptions = { type: 'array' };
+
+        // Try passwords if provided
+        const passwords = password
+          ? (Array.isArray(password) ? password : [password])
+          : [null];
+
+        let workbook = null;
+        let usedPassword = null;
+        let lastError = null;
+
+        for (const pwd of passwords) {
+          try {
+            if (pwd) {
+              readOptions.password = pwd;
+            } else {
+              delete readOptions.password;
+            }
+            workbook = XLSX.read(data, readOptions);
+            usedPassword = pwd;
+            break; // Success, stop trying passwords
+          } catch (err) {
+            lastError = err;
+            // Check if it's a password error
+            if (err.message && (
+              err.message.includes('password') ||
+              err.message.includes('encrypted') ||
+              err.message.includes('Password')
+            )) {
+              continue; // Try next password
+            }
+            // Other error, stop trying
+            throw err;
+          }
+        }
+
+        if (!workbook) {
+          // Check if the file is password protected
+          if (lastError && (
+            lastError.message.includes('password') ||
+            lastError.message.includes('encrypted') ||
+            lastError.message.includes('Password')
+          )) {
+            const error = new Error('PASSWORD_REQUIRED');
+            error.code = 'PASSWORD_REQUIRED';
+            error.originalMessage = lastError.message;
+            reject(error);
+            return;
+          }
+          throw lastError || new Error('Failed to read Excel file');
+        }
 
         // Get the first sheet
         const firstSheetName = workbook.SheetNames[0];
@@ -79,9 +135,22 @@ function parseExcel(file) {
           rowCount: rawRows.length,
           sheetName: firstSheetName,
           data: null,
-          columns: null
+          columns: null,
+          usedPassword: usedPassword // Include which password worked
         });
       } catch (error) {
+        // Check if it's a password error
+        if (error.message && (
+          error.message.includes('password') ||
+          error.message.includes('encrypted') ||
+          error.message.includes('Password')
+        )) {
+          const pwError = new Error('PASSWORD_REQUIRED');
+          pwError.code = 'PASSWORD_REQUIRED';
+          pwError.originalMessage = error.message;
+          reject(pwError);
+          return;
+        }
         reject(new Error(`Excel parsing failed: ${error.message}`));
       }
     };

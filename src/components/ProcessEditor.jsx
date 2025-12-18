@@ -55,6 +55,11 @@ export default function ProcessEditor({
   const [isEditingExisting, setIsEditingExisting] = useState(false);
   const [originalProcessId, setOriginalProcessId] = useState(null);
 
+  // Password management
+  const [savedPasswords, setSavedPasswords] = useState([]);
+  const [newPassword, setNewPassword] = useState('');
+  const [showPasswords, setShowPasswords] = useState(false);
+
   // Initialize with existing mapping if available
   useEffect(() => {
     if (existingMapping) {
@@ -78,6 +83,11 @@ export default function ProcessEditor({
       setBenefitProvider(existingMapping.benefitProvider || '');
       setIsEditingExisting(true);
       setOriginalProcessId(existingMapping.id || null);
+      // Load saved passwords
+      const passwords = existingMapping.passwords
+        ? (Array.isArray(existingMapping.passwords) ? existingMapping.passwords : [existingMapping.passwords])
+        : [];
+      setSavedPasswords(passwords);
     } else {
       // Auto-suggest mappings based on similar column names
       const suggested = autoSuggestMappings(sourceColumns);
@@ -89,6 +99,7 @@ export default function ProcessEditor({
       setOutputOptions({ roundLOCAmount: false, fallbackEmail: '' });
       setIsEditingExisting(false);
       setOriginalProcessId(null);
+      setSavedPasswords([]);
     }
   }, [existingMapping, sourceColumns, companyName, entity]);
 
@@ -146,6 +157,7 @@ export default function ProcessEditor({
       fields: mappings,
       additionalDetails,
       outputOptions,
+      passwords: savedPasswords.length > 0 ? savedPasswords : null,
       createdAt: new Date().toISOString(),
       // If editing and saving as new, don't pass the original ID
       // If editing and updating, pass the original ID
@@ -153,6 +165,18 @@ export default function ProcessEditor({
       saveAsNew: saveAsNew
     };
     onSave(processConfig);
+  };
+
+  // Password management functions
+  const addPassword = () => {
+    if (newPassword.trim() && !savedPasswords.includes(newPassword.trim())) {
+      setSavedPasswords([...savedPasswords, newPassword.trim()]);
+      setNewPassword('');
+    }
+  };
+
+  const removePassword = (index) => {
+    setSavedPasswords(savedPasswords.filter((_, i) => i !== index));
   };
 
   // Handle proceed without saving
@@ -557,6 +581,98 @@ export default function ProcessEditor({
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Password Management */}
+      <div className="additional-details-config" style={{ marginTop: '1.5rem' }}>
+        <h4>File Passwords</h4>
+        <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
+          Save passwords for encrypted Excel files from this company
+        </p>
+
+        {/* Saved passwords list */}
+        {savedPasswords.length > 0 && (
+          <div style={{ marginBottom: '1rem' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', marginBottom: '0.5rem', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={showPasswords}
+                onChange={(e) => setShowPasswords(e.target.checked)}
+              />
+              Show passwords
+            </label>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              {savedPasswords.map((pwd, index) => (
+                <div
+                  key={index}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    padding: '0.5rem',
+                    background: 'var(--bg)',
+                    borderRadius: '0.375rem'
+                  }}
+                >
+                  <span style={{ flex: 1, fontFamily: 'monospace' }}>
+                    {showPasswords ? pwd : '••••••••'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => removePassword(index)}
+                    style={{
+                      background: 'var(--danger)',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '0.25rem',
+                      padding: '0.25rem 0.5rem',
+                      cursor: 'pointer',
+                      fontSize: '0.75rem'
+                    }}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Add new password */}
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          <input
+            type="text"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            placeholder="Enter new password..."
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                addPassword();
+              }
+            }}
+            style={{
+              flex: 1,
+              padding: '0.5rem',
+              border: '1px solid var(--border)',
+              borderRadius: '0.375rem'
+            }}
+          />
+          <button
+            type="button"
+            onClick={addPassword}
+            disabled={!newPassword.trim()}
+            className="btn btn-secondary"
+            style={{ whiteSpace: 'nowrap' }}
+          >
+            Add Password
+          </button>
+        </div>
+        <small style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.5rem', display: 'block' }}>
+          {savedPasswords.length === 0
+            ? 'No passwords saved. Passwords will be prompted when needed.'
+            : `${savedPasswords.length} password(s) saved. The system will try each one automatically.`}
+        </small>
       </div>
 
       {/* Action Buttons */}

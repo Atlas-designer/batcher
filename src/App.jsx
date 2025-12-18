@@ -7,6 +7,7 @@ import ProcessEditor from './components/ProcessEditor';
 import OutputPreview from './components/OutputPreview';
 import ProcessManager from './components/ProcessManager';
 import ImportDialog from './components/ImportDialog';
+import PasswordDialog from './components/PasswordDialog';
 import { parseFile, parseAndCombinePDFs } from './utils/fileParser';
 import { extractCompanyAndEntity, generateOutputFilename } from './utils/filenameParser';
 import { applyMapping, downloadCSV, OUTPUT_COLUMNS } from './utils/outputFormatter';
@@ -17,7 +18,10 @@ import {
   updateProcess,
   deleteProcess,
   findProcessByCompany,
-  linkCompanyToProcess
+  linkCompanyToProcess,
+  getPasswordsForCompany,
+  savePasswordForCompany,
+  getTempPasswords
 } from './services/processStore';
 
 // App steps
@@ -80,6 +84,11 @@ export default function App() {
   const [fileQueue, setFileQueue] = useState([]);
   const [currentFileIndex, setCurrentFileIndex] = useState(0);
 
+  // Password dialog state
+  const [showPasswordDialog, setShowPasswordDialog] = useState(false);
+  const [pendingPasswordFile, setPendingPasswordFile] = useState(null);
+  const [existingPasswords, setExistingPasswords] = useState([]);
+
   // Load saved processes on mount
   useEffect(() => {
     if (authenticated) {
@@ -117,7 +126,7 @@ export default function App() {
   };
 
   // Process a single file
-  const processFile = async (file) => {
+  const processFile = async (file, providedPassword = null) => {
     setLoading(true);
     setError('');
     setSourceFile(file);
@@ -128,14 +137,22 @@ export default function App() {
     setDataConfig(null);
 
     try {
-      // Parse the file (returns raw rows)
-      const result = await parseFile(file);
-      setRawRows(result.rawRows);
-
-      // Extract company name and entity from filename
+      // Extract company name and entity from filename first
       const { company, entity } = extractCompanyAndEntity(file.name);
       setDetectedCompany(company);
       setDetectedEntity(entity);
+
+      // Get any saved passwords for this company
+      let passwords = providedPassword ? [providedPassword] : [];
+      if (!providedPassword) {
+        const savedPasswords = await getPasswordsForCompany(company);
+        const tempPasswords = getTempPasswords(company);
+        passwords = [...savedPasswords, ...tempPasswords];
+      }
+
+      // Try to parse the file (with passwords if available)
+      const result = await parseFile(file, passwords.length > 0 ? passwords : null);
+      setRawRows(result.rawRows);
 
       // Try to find a matching process early to get saved startRow
       const earlyMatch = await findProcessByCompany(company);
@@ -147,11 +164,81 @@ export default function App() {
       // Go to configure step
       setCurrentStep(STEPS.CONFIGURE);
     } catch (err) {
+      // Check if password is required
+      if (err.code === 'PASSWORD_REQUIRED') {
+        // Extract company for password lookup
+        const { company } = extractCompanyAndEntity(file.name);
+        const savedPasswords = await getPasswordsForCompany(company);
+        const tempPasswords = getTempPasswords(company);
+
+        setPendingPasswordFile(file);
+        setExistingPasswords([...savedPasswords, ...tempPasswords]);
+        setShowPasswordDialog(true);
+        setLoading(false);
+        return;
+      }
+
       setError(err.message || 'Failed to parse file');
       console.error('File parsing error:', err);
     }
 
     setLoading(false);
+  };
+
+  // Handle password submission from dialog
+  const handlePasswordSubmit = async ({ password, saveOption }) => {
+    setShowPasswordDialog(false);
+
+    if (!pendingPasswordFile) return;
+
+    const file = pendingPasswordFile;
+    const { company } = extractCompanyAndEntity(file.name);
+
+    // Try to parse with the provided password
+    setLoading(true);
+    try {
+      const result = await parseFile(file, password);
+      setRawRows(result.rawRows);
+
+      // Save password if requested
+      if (saveOption !== 'no-save') {
+        await savePasswordForCompany(company, password, saveOption);
+      }
+
+      // Try to find a matching process early to get saved startRow
+      const earlyMatch = await findProcessByCompany(company);
+      if (earlyMatch) {
+        setMatchedProcess(earlyMatch);
+        setSelectedProcessId(earlyMatch.id);
+      }
+
+      setPendingPasswordFile(null);
+      setExistingPasswords([]);
+
+      // Go to configure step
+      setCurrentStep(STEPS.CONFIGURE);
+    } catch (err) {
+      if (err.code === 'PASSWORD_REQUIRED') {
+        // Wrong password - show dialog again
+        setError('Incorrect password. Please try again.');
+        const savedPasswords = await getPasswordsForCompany(company);
+        const tempPasswords = getTempPasswords(company);
+        setExistingPasswords([...savedPasswords, ...tempPasswords, password]);
+        setShowPasswordDialog(true);
+      } else {
+        setError(err.message || 'Failed to parse file');
+        setPendingPasswordFile(null);
+        setExistingPasswords([]);
+      }
+    }
+    setLoading(false);
+  };
+
+  // Handle password dialog cancel
+  const handlePasswordCancel = () => {
+    setShowPasswordDialog(false);
+    setPendingPasswordFile(null);
+    setExistingPasswords([]);
   };
 
   // Handle combining multiple files (combination mode)
@@ -764,6 +851,16 @@ export default function App() {
           existingProcesses={processes}
           onComplete={handleImportAction}
           onCancel={handleImportComplete}
+        />
+
+        {/* Password Dialog */}
+        <PasswordDialog
+          isOpen={showPasswordDialog}
+          fileName={pendingPasswordFile?.name || ''}
+          companyName={detectedCompany}
+          existingPasswords={existingPasswords}
+          onSubmit={handlePasswordSubmit}
+          onCancel={handlePasswordCancel}
         />
       </main>
     </div>
