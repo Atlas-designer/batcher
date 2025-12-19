@@ -310,14 +310,15 @@ export default function DuplicateChecker({ outputData, onDuplicatesFound, onProc
               The following applicant{duplicates.length !== 1 ? 's are' : ' is'} already on the scheme with the same email and LOC amount:
             </p>
             <div style={{
-              background: 'var(--bg-secondary)',
+              background: 'white',
               borderRadius: '8px',
-              padding: '0.75rem',
+              padding: '0.75rem 1rem',
               marginBottom: '1rem',
               maxHeight: '200px',
-              overflow: 'auto'
+              overflow: 'auto',
+              border: '1px solid var(--border)'
             }}>
-              <p style={{ margin: 0, fontWeight: 500 }}>
+              <p style={{ margin: 0, fontWeight: 600, color: 'var(--danger)' }}>
                 {duplicates.map((d, i) => (
                   <span key={i}>
                     {d.firstname} {d.surname}
