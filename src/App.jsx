@@ -435,6 +435,30 @@ export default function App() {
     }
   };
 
+  // Handle removing duplicates from output data
+  const handleRemoveDuplicates = (duplicates) => {
+    if (!outputData || !duplicates || duplicates.length === 0) return;
+
+    // Create a set of duplicate keys (email + LOC) for fast lookup
+    const duplicateKeys = new Set(
+      duplicates.map(d => {
+        const email = (d.email || '').toLowerCase().trim();
+        const loc = parseFloat(String(d.locAmount || '').replace(/[£$€,]/g, '')).toFixed(2);
+        return `${email}|${loc}`;
+      })
+    );
+
+    // Filter out duplicates from output data
+    const filteredData = outputData.filter(row => {
+      const email = (row['Email'] || '').toLowerCase().trim();
+      const loc = parseFloat(String(row['LOC Amount'] || '').replace(/[£$€,]/g, '')).toFixed(2);
+      const key = `${email}|${loc}`;
+      return !duplicateKeys.has(key);
+    });
+
+    setOutputData(filteredData);
+  };
+
   // Reset to start or process next file in queue
   const handleReset = () => {
     // Check if there are more files in the queue
@@ -824,6 +848,7 @@ export default function App() {
                   validationErrors={validationErrors}
                   onDownload={handleDownload}
                   filename={outputFilename}
+                  onRemoveDuplicates={handleRemoveDuplicates}
                 />
               </>
             )}

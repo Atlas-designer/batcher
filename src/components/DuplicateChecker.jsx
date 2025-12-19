@@ -6,7 +6,7 @@ import Papa from 'papaparse';
  * Duplicate Checker component for comparing processed file against existing scheme report
  * Checks for duplicates where both email AND LOC amount match
  */
-export default function DuplicateChecker({ outputData, onDuplicatesFound, onProceed }) {
+export default function DuplicateChecker({ outputData, onDuplicatesFound, onProceed, onRemoveDuplicates }) {
   const [isEnabled, setIsEnabled] = useState(false);
   const [schemeReport, setSchemeReport] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -172,6 +172,13 @@ export default function DuplicateChecker({ outputData, onDuplicatesFound, onProc
     if (onProceed) onProceed(false);
   };
 
+  const handleRemoveDuplicates = () => {
+    setShowDialog(false);
+    if (onRemoveDuplicates) onRemoveDuplicates(duplicates);
+    // Update local state to show duplicates were removed
+    setDuplicates([]);
+  };
+
   // Clear report
   const handleClearReport = () => {
     setSchemeReport(null);
@@ -328,21 +335,28 @@ export default function DuplicateChecker({ outputData, onDuplicatesFound, onProc
               </p>
             </div>
             <p style={{ marginBottom: '1.5rem', fontWeight: 500 }}>
-              Do you want to proceed?
+              What would you like to do?
             </p>
-            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
               <button
                 className="btn btn-secondary"
                 onClick={handleCancel}
               >
-                No, Go Back
+                Go Back
+              </button>
+              <button
+                className="btn"
+                onClick={handleRemoveDuplicates}
+                style={{ background: 'var(--primary)', color: 'white' }}
+              >
+                Remove Duplicates
               </button>
               <button
                 className="btn btn-warning"
                 onClick={handleProceedAnyway}
                 style={{ background: 'var(--warning)', color: 'white' }}
               >
-                Yes, Proceed Anyway
+                Proceed Anyway
               </button>
             </div>
           </div>

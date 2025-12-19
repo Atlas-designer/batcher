@@ -10,7 +10,8 @@ export default function OutputPreview({
   data,
   validationErrors,
   onDownload,
-  filename
+  filename,
+  onRemoveDuplicates
 }) {
   const [duplicateCheckPassed, setDuplicateCheckPassed] = useState(null);
   const [hasDuplicates, setHasDuplicates] = useState(false);
@@ -109,6 +110,7 @@ export default function OutputPreview({
           outputData={data}
           onDuplicatesFound={handleDuplicatesFound}
           onProceed={handleProceedDecision}
+          onRemoveDuplicates={onRemoveDuplicates}
         />
 
         {/* Download Button */}
