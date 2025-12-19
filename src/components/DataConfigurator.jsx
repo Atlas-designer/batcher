@@ -12,7 +12,9 @@ export default function DataConfigurator({
   existingConfig,
   detectedCompany,
   detectedEntity,
-  suggestedStartRow  // From matched process's saved dataConfig
+  suggestedStartRow,  // From matched process's saved dataConfig
+  onSkip,  // Callback to skip this file (for empty files or to move to next in queue)
+  hasMoreFiles = false  // Whether there are more files in the queue
 }) {
   // Determine initial start row: 1) existing config, 2) suggested from process, 3) auto-detect, 4) default to 2
   const getInitialStartRow = () => {
@@ -464,9 +466,19 @@ export default function DataConfigurator({
         </div>
       )}
 
-      {/* Apply Button */}
+      {/* Action Buttons */}
       <div className="action-bar" style={{ borderTop: 'none', paddingTop: 0 }}>
-        <div></div>
+        <div>
+          {onSkip && (
+            <button
+              className="btn btn-secondary"
+              onClick={onSkip}
+              title={hasMoreFiles ? "Skip this file and continue with the next one" : "Disregard this file and return to upload"}
+            >
+              {hasMoreFiles ? 'Skip File →' : 'Disregard File'}
+            </button>
+          )}
+        </div>
         <button
           className="btn btn-primary"
           onClick={handleApply}
@@ -475,6 +487,28 @@ export default function DataConfigurator({
           Continue with {previewData?.rowCount || 0} applicants →
         </button>
       </div>
+
+      {/* Empty file warning */}
+      {previewData && previewData.rowCount === 0 && (
+        <div style={{
+          background: 'rgba(251, 191, 36, 0.1)',
+          border: '1px solid #f59e0b',
+          borderRadius: '0.375rem',
+          padding: '1rem',
+          marginTop: '1rem',
+          textAlign: 'center'
+        }}>
+          <p style={{ color: '#b45309', marginBottom: '0.5rem' }}>
+            <strong>No applicants found in this file.</strong>
+          </p>
+          <p style={{ fontSize: '0.875rem', color: '#92400e' }}>
+            The file appears to be empty or the row settings may need adjusting.
+            {onSkip && (hasMoreFiles
+              ? ' Click "Skip File" to continue with the next file in the queue.'
+              : ' Click "Disregard File" to return to the upload screen.')}
+          </p>
+        </div>
+      )}
     </div>
   );
 }

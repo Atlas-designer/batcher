@@ -633,6 +633,8 @@ export default function App() {
                   detectedCompany={detectedCompany}
                   detectedEntity={detectedEntity}
                   suggestedStartRow={matchedProcess?.dataConfig?.startRow}
+                  onSkip={handleSkipFile}
+                  hasMoreFiles={fileQueue.length > 0 && currentFileIndex < fileQueue.length - 1}
                 />
               </>
             )}
