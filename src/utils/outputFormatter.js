@@ -240,10 +240,11 @@ export function downloadCSV(data, filename) {
 /**
  * Extra columns for SFTP/Car Maintenance export
  */
-const SFTP_EXTRA_COLUMNS = ['Date of Approval', 'AccountName', 'APT'];
+const SFTP_EXTRA_COLUMNS = ['AccountName', 'APT'];
 
 /**
  * Convert formatted data to CSV string with SFTP extra columns
+ * Also clears 'Additional Details' data for SFTP output
  */
 export function toSFTPCSV(data) {
   if (!data || data.length === 0) {
@@ -256,9 +257,15 @@ export function toSFTPCSV(data) {
   // Header row
   const headerLine = headers.map(h => escapeCSV(h)).join(',');
 
-  // Data rows - extra columns are empty
+  // Data rows - extra columns are empty, Additional Details cleared
   const dataLines = data.map(row => {
-    const baseValues = baseHeaders.map(h => escapeCSV(row[h] || ''));
+    const baseValues = baseHeaders.map(h => {
+      // Clear Additional Details for SFTP output
+      if (h === 'Additional Details') {
+        return '';
+      }
+      return escapeCSV(row[h] || '');
+    });
     const extraValues = SFTP_EXTRA_COLUMNS.map(() => ''); // Empty values for extra columns
     return [...baseValues, ...extraValues].join(',');
   });
