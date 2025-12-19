@@ -533,7 +533,7 @@ export default function App() {
     <div className="app-container">
       {/* Header */}
       <header className="header">
-        <h1>🚲 Batch Formatter</h1>
+        <h1><img src="/robot.GIF" alt="" style={{ width: '32px', height: '32px', verticalAlign: 'middle', marginRight: '0.5rem' }} />Batch Formatter</h1>
         <div className="header-nav">
           <div className="tabs" style={{ border: 'none', marginBottom: 0 }}>
             <button

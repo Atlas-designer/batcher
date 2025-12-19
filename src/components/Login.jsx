@@ -41,7 +41,7 @@ export default function Login({ onLogin }) {
   return (
     <div className="login-container">
       <form className="login-card" onSubmit={handleSubmit}>
-        <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🚲</div>
+        <img src="/robot.GIF" alt="Robot" style={{ width: '80px', height: '80px', marginBottom: '1rem' }} />
         <h1>Batch Formatter</h1>
         <p>Cycle to Work File Processor</p>
 
