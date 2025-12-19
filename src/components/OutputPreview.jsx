@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { OUTPUT_COLUMNS } from '../utils/outputFormatter';
 import { getErrorRowNumbers } from '../utils/validation';
+import DuplicateChecker from './DuplicateChecker';
 
 /**
  * Output preview component with validation warnings
@@ -10,6 +12,21 @@ export default function OutputPreview({
   onDownload,
   filename
 }) {
+  const [duplicateCheckPassed, setDuplicateCheckPassed] = useState(null);
+  const [hasDuplicates, setHasDuplicates] = useState(false);
+
+  // Handle duplicate check results
+  const handleDuplicatesFound = (duplicates) => {
+    setHasDuplicates(duplicates.length > 0);
+    if (duplicates.length === 0) {
+      setDuplicateCheckPassed(true);
+    }
+  };
+
+  // Handle proceed decision from duplicate dialog
+  const handleProceedDecision = (proceed) => {
+    setDuplicateCheckPassed(proceed);
+  };
   const errorRows = getErrorRowNumbers(validationErrors);
   const hasErrors = validationErrors.length > 0;
 
@@ -86,6 +103,13 @@ export default function OutputPreview({
             </tbody>
           </table>
         </div>
+
+        {/* Duplicate Checker */}
+        <DuplicateChecker
+          outputData={data}
+          onDuplicatesFound={handleDuplicatesFound}
+          onProceed={handleProceedDecision}
+        />
 
         {/* Download Button */}
         <div className="action-bar">
