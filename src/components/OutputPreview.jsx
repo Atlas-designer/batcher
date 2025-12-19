@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { OUTPUT_COLUMNS } from '../utils/outputFormatter';
+import { OUTPUT_COLUMNS, downloadSFTPCSV } from '../utils/outputFormatter';
 import { getErrorRowNumbers } from '../utils/validation';
 import DuplicateChecker from './DuplicateChecker';
 
@@ -11,10 +11,19 @@ export default function OutputPreview({
   validationErrors,
   onDownload,
   filename,
-  onRemoveDuplicates
+  onRemoveDuplicates,
+  companyName
 }) {
   const [duplicateCheckPassed, setDuplicateCheckPassed] = useState(null);
   const [hasDuplicates, setHasDuplicates] = useState(false);
+  const [isCarMaintenance, setIsCarMaintenance] = useState(false);
+
+  // Handle SFTP download
+  const handleSFTPDownload = () => {
+    if (data && companyName) {
+      downloadSFTPCSV(data, companyName);
+    }
+  };
 
   // Handle duplicate check results
   const handleDuplicatesFound = (duplicates) => {
@@ -51,6 +60,19 @@ export default function OutputPreview({
       {hasErrors && (
         <ValidationPanel errors={validationErrors} />
       )}
+
+      {/* Car Maintenance Checkbox */}
+      <div style={{ marginBottom: '1rem' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={isCarMaintenance}
+            onChange={(e) => setIsCarMaintenance(e.target.checked)}
+            style={{ width: '18px', height: '18px' }}
+          />
+          <span style={{ fontWeight: 500 }}>Car Maintenance</span>
+        </label>
+      </div>
 
       {/* Output Table */}
       <div className="card">
@@ -113,20 +135,28 @@ export default function OutputPreview({
           onRemoveDuplicates={onRemoveDuplicates}
         />
 
-        {/* Download Button */}
+        {/* Download Button(s) */}
         <div className="action-bar">
           <div className="action-bar-left">
             <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
               Output: {filename}
             </span>
           </div>
-          <div className="action-bar-right">
+          <div className="action-bar-right" style={{ display: 'flex', gap: '0.5rem' }}>
             <button
               className="btn btn-success"
               onClick={onDownload}
             >
               ⬇ Download CSV
             </button>
+            {isCarMaintenance && (
+              <button
+                className="btn btn-success"
+                onClick={handleSFTPDownload}
+              >
+                ⬇ Download SFTP
+              </button>
+            )}
           </div>
         </div>
       </div>

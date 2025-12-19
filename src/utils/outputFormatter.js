@@ -238,6 +238,64 @@ export function downloadCSV(data, filename) {
 }
 
 /**
+ * Extra columns for SFTP/Car Maintenance export
+ */
+const SFTP_EXTRA_COLUMNS = ['Date of Approval', 'AccountName', 'APT'];
+
+/**
+ * Convert formatted data to CSV string with SFTP extra columns
+ */
+export function toSFTPCSV(data) {
+  if (!data || data.length === 0) {
+    return '';
+  }
+
+  const baseHeaders = OUTPUT_COLUMNS.map(c => c.key);
+  const headers = [...baseHeaders, ...SFTP_EXTRA_COLUMNS];
+
+  // Header row
+  const headerLine = headers.map(h => escapeCSV(h)).join(',');
+
+  // Data rows - extra columns are empty
+  const dataLines = data.map(row => {
+    const baseValues = baseHeaders.map(h => escapeCSV(row[h] || ''));
+    const extraValues = SFTP_EXTRA_COLUMNS.map(() => ''); // Empty values for extra columns
+    return [...baseValues, ...extraValues].join(',');
+  });
+
+  return [headerLine, ...dataLines].join('\r\n') + '\r\n';
+}
+
+/**
+ * Download data as SFTP CSV file (with extra columns)
+ */
+export function downloadSFTPCSV(data, companyName) {
+  // Format date as DD.MM.YY
+  const now = new Date();
+  const day = String(now.getDate()).padStart(2, '0');
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const year = String(now.getFullYear()).slice(-2);
+  const dateStr = `${day}.${month}.${year}`;
+
+  const filename = `${companyName} SFTP ${dateStr}.csv`;
+
+  const csvContent = toSFTPCSV(data);
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+
+  const link = document.createElement('a');
+  link.setAttribute('href', url);
+  link.setAttribute('download', filename);
+  link.style.visibility = 'hidden';
+
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+
+  URL.revokeObjectURL(url);
+}
+
+/**
  * Validate a single row
  */
 export function validateRow(row) {
