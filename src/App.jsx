@@ -850,6 +850,7 @@ export default function App() {
                   filename={outputFilename}
                   onRemoveDuplicates={handleRemoveDuplicates}
                   companyName={currentMapping?.companyName}
+                  sourceFilename={sourceFile?.name}
                 />
               </>
             )}

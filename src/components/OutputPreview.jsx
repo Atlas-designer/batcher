@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { OUTPUT_COLUMNS, downloadSFTPCSV } from '../utils/outputFormatter';
 import { getErrorRowNumbers } from '../utils/validation';
 import DuplicateChecker from './DuplicateChecker';
@@ -12,11 +12,19 @@ export default function OutputPreview({
   onDownload,
   filename,
   onRemoveDuplicates,
-  companyName
+  companyName,
+  sourceFilename
 }) {
   const [duplicateCheckPassed, setDuplicateCheckPassed] = useState(null);
   const [hasDuplicates, setHasDuplicates] = useState(false);
   const [isCarMaintenance, setIsCarMaintenance] = useState(false);
+
+  // Auto-detect car maintenance from source filename
+  useEffect(() => {
+    if (sourceFilename && sourceFilename.toLowerCase().includes('car maintenance')) {
+      setIsCarMaintenance(true);
+    }
+  }, [sourceFilename]);
 
   // Handle SFTP download
   const handleSFTPDownload = () => {
