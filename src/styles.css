@@ -479,14 +479,25 @@ body {
   border: 1px solid var(--border);
   border-radius: 0.375rem;
   font-size: 0.875rem;
-  background: var(--bg-card);
-  color: var(--text);
+  background: white;
+  color: #1e293b;
 }
 
 .additional-details-row select:focus,
 .additional-details-row input:focus {
   outline: none;
   border-color: var(--primary);
+}
+
+/* All select dropdowns should have dark text on white */
+select {
+  background: white;
+  color: #1e293b;
+}
+
+select option {
+  background: white;
+  color: #1e293b;
 }
 
 .additional-details-preview {
