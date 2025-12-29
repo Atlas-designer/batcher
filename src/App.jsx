@@ -8,6 +8,7 @@ import OutputPreview from './components/OutputPreview';
 import ProcessManager from './components/ProcessManager';
 import ImportDialog from './components/ImportDialog';
 import PasswordDialog from './components/PasswordDialog';
+import AdminAdam from './components/AdminAdam';
 import { parseFile, parseAndCombinePDFs } from './utils/fileParser';
 import { extractCompanyAndEntity, generateOutputFilename } from './utils/filenameParser';
 import { applyMapping, downloadCSV, OUTPUT_COLUMNS } from './utils/outputFormatter';
@@ -572,6 +573,12 @@ export default function App() {
             >
               Manage Processes
             </button>
+            <button
+              className={`tab ${currentTab === 'adam' ? 'active' : ''}`}
+              onClick={() => setCurrentTab('adam')}
+            >
+              Admin Adam
+            </button>
           </div>
           <button className="btn btn-secondary" onClick={handleLogout}>
             Logout
@@ -866,7 +873,7 @@ export default function App() {
               </div>
             )}
           </>
-        ) : (
+        ) : currentTab === 'manage' ? (
           /* Manage Tab */
           <ProcessManager
             processes={processes}
@@ -885,6 +892,9 @@ export default function App() {
             onImport={handleImport}
             onRefresh={loadProcesses}
           />
+        ) : (
+          /* Admin Adam Tab */
+          <AdminAdam />
         )}
 
         {/* Import Dialog */}
