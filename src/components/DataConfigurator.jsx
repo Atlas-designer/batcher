@@ -58,6 +58,12 @@ export default function DataConfigurator({
   const [dateFrom, setDateFrom] = useState(existingConfig?.dateFrom || '');
   const [dateTo, setDateTo] = useState(existingConfig?.dateTo || '');
 
+  // Column value filtering (e.g., filter by "Add", "Change", etc.)
+  const [useColumnFilter, setUseColumnFilter] = useState(existingConfig?.useColumnFilter || false);
+  const [filterColumn, setFilterColumn] = useState(existingConfig?.filterColumn || '');
+  const [filterValue, setFilterValue] = useState(existingConfig?.filterValue || '');
+  const [availableFilterValues, setAvailableFilterValues] = useState([]);
+
   // Processed data preview
   const [previewData, setPreviewData] = useState(null);
   const [columns, setColumns] = useState([]);
@@ -86,6 +92,15 @@ export default function DataConfigurator({
       filteredData = filterByDateRange(processed.data, dateColumn, dateFrom, dateTo);
     }
 
+    // Apply column value filter if configured
+    if (useColumnFilter && filterColumn && filterValue) {
+      filteredData = filteredData.filter(row => {
+        const cellValue = row[filterColumn];
+        if (!cellValue) return false;
+        return String(cellValue).toLowerCase().trim() === filterValue.toLowerCase().trim();
+      });
+    }
+
     setColumns(processed.columns);
     setPreviewData({
       data: filteredData,
@@ -93,7 +108,38 @@ export default function DataConfigurator({
       rowCount: filteredData.length,
       totalRawRows: rawRows.length
     });
-  }, [rawRows, startRow, endRow, useEndRow, dateColumn, dateFrom, dateTo]);
+  }, [rawRows, startRow, endRow, useEndRow, dateColumn, dateFrom, dateTo, useColumnFilter, filterColumn, filterValue]);
+
+  // Update available filter values when filter column changes
+  useEffect(() => {
+    if (!filterColumn || !previewData?.columns?.includes(filterColumn)) {
+      setAvailableFilterValues([]);
+      return;
+    }
+
+    // Get unique non-empty values from the selected column (before column filter is applied)
+    const headerRow = startRow - 1;
+    const processed = processRawData(rawRows, {
+      headerRow,
+      startRow,
+      endRow: useEndRow && endRow ? parseInt(endRow) : null
+    });
+
+    const values = new Set();
+    processed.data.forEach(row => {
+      const val = row[filterColumn];
+      if (val && String(val).trim()) {
+        values.add(String(val).trim());
+      }
+    });
+
+    // Sort alphabetically and limit to reasonable number
+    const sortedValues = Array.from(values).sort((a, b) =>
+      a.toLowerCase().localeCompare(b.toLowerCase())
+    ).slice(0, 50);
+
+    setAvailableFilterValues(sortedValues);
+  }, [filterColumn, rawRows, startRow, endRow, useEndRow]);
 
   // Build header info rows (all rows from 1 to startRow-1) for mapping
   const getHeaderInfoRows = () => {
@@ -133,7 +179,10 @@ export default function DataConfigurator({
           companyCol,
           dateColumn,
           dateFrom,
-          dateTo
+          dateTo,
+          useColumnFilter,
+          filterColumn,
+          filterValue
         }
       });
     }
@@ -377,6 +426,96 @@ export default function DataConfigurator({
           </div>
         </div>
       )}
+
+      {/* Column Value Filtering */}
+      <div style={{ background: 'var(--bg)', padding: '1rem', borderRadius: '0.5rem', marginBottom: '1.5rem' }}>
+        <h4 style={{ fontSize: '0.875rem', marginBottom: '0.75rem' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={useColumnFilter}
+              onChange={(e) => {
+                setUseColumnFilter(e.target.checked);
+                if (!e.target.checked) {
+                  setFilterColumn('');
+                  setFilterValue('');
+                }
+              }}
+            />
+            Filter by Column Value (Optional)
+          </label>
+        </h4>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginBottom: '1rem' }}>
+          Only process rows where a specific column contains a certain value (e.g., only "Add" entries).
+        </p>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.5rem' }}>
+              Select Column
+            </label>
+            <select
+              value={filterColumn}
+              onChange={(e) => {
+                setFilterColumn(e.target.value);
+                setFilterValue(''); // Reset value when column changes
+              }}
+              disabled={!useColumnFilter}
+              style={{
+                width: '100%',
+                padding: '0.5rem',
+                border: '1px solid var(--border)',
+                borderRadius: '0.375rem',
+                opacity: useColumnFilter ? 1 : 0.5
+              }}
+            >
+              <option value="">-- Select column --</option>
+              {columns.map(col => (
+                <option key={col} value={col}>{col}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.5rem' }}>
+              Filter Value
+            </label>
+            <select
+              value={filterValue}
+              onChange={(e) => setFilterValue(e.target.value)}
+              disabled={!useColumnFilter || !filterColumn || availableFilterValues.length === 0}
+              style={{
+                width: '100%',
+                padding: '0.5rem',
+                border: '1px solid var(--border)',
+                borderRadius: '0.375rem',
+                opacity: (useColumnFilter && filterColumn) ? 1 : 0.5
+              }}
+            >
+              <option value="">-- Select value --</option>
+              {availableFilterValues.map(val => (
+                <option key={val} value={val}>{val}</option>
+              ))}
+            </select>
+            {useColumnFilter && filterColumn && availableFilterValues.length === 0 && (
+              <small style={{ color: 'var(--text-muted)' }}>No values found in this column</small>
+            )}
+          </div>
+        </div>
+
+        {useColumnFilter && filterColumn && filterValue && (
+          <div style={{
+            marginTop: '0.75rem',
+            padding: '0.5rem',
+            background: 'rgba(22, 163, 74, 0.1)',
+            borderRadius: '0.25rem',
+            fontSize: '0.75rem',
+            color: 'var(--success)'
+          }}>
+            ✓ Filtering: Only rows where "{filterColumn}" = "{filterValue}"
+          </div>
+        )}
+      </div>
 
       {/* Raw Data Preview */}
       <div style={{ marginBottom: '1.5rem' }}>
