@@ -481,15 +481,28 @@ export function processRawData(rawRows, settings = {}) {
   const headerIndex = Math.max(0, headerRow - 1);
   const headers = rawRows[headerIndex] || [];
 
-  // Clean up headers - remove empty ones and trim
-  const columns = headers.map((h, idx) => {
-    const cleaned = String(h || '').trim();
-    return cleaned || `Column ${idx + 1}`;
-  });
-
-  // Get data rows
+  // Find the maximum number of columns across all data rows
+  // This handles cases where header row has fewer columns than data rows
   const dataStartIndex = Math.max(0, startRow - 1);
   const dataEndIndex = endRow ? Math.min(endRow, rawRows.length) : rawRows.length;
+  let maxColumns = headers.length;
+
+  for (let i = dataStartIndex; i < dataEndIndex; i++) {
+    const row = rawRows[i];
+    if (row && row.length > maxColumns) {
+      maxColumns = row.length;
+    }
+  }
+
+  // Clean up headers - use column numbers for empty/missing headers
+  const columns = [];
+  for (let idx = 0; idx < maxColumns; idx++) {
+    const h = headers[idx];
+    const cleaned = String(h || '').trim();
+    columns.push(cleaned || `Column ${idx + 1}`);
+  }
+
+  // Get data rows (using already calculated indices)
 
   const data = [];
 
