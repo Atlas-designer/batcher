@@ -5,7 +5,7 @@ import { OUTPUT_COLUMNS } from '../utils/outputFormatter';
  * Visual Process Editor for mapping source columns to target fields
  */
 export default function ProcessEditor({
-  sourceColumns,
+  sourceColumns = [],
   sourceData,
   headerInfoRows,
   companyName,
@@ -17,6 +17,12 @@ export default function ProcessEditor({
   onPreviewUpdate,
   onProceedWithoutSaving
 }) {
+  // If no source columns but we have an existing mapping, derive columns from saved fields
+  const [derivedSourceColumns, setDerivedSourceColumns] = useState([]);
+
+  // Determine which columns to use - file columns or saved mapping columns
+  const effectiveSourceColumns = sourceColumns.length > 0 ? sourceColumns : derivedSourceColumns;
+  const isEditingWithoutFile = sourceColumns.length === 0 && existingMapping;
   // Field mappings: { targetField: sourceColumn }
   const [mappings, setMappings] = useState({});
 
@@ -88,6 +94,23 @@ export default function ProcessEditor({
         ? (Array.isArray(existingMapping.passwords) ? existingMapping.passwords : [existingMapping.passwords])
         : [];
       setSavedPasswords(passwords);
+
+      // If no source columns from file, derive them from saved mapping
+      if (sourceColumns.length === 0) {
+        const savedColumns = new Set();
+        // Add columns from field mappings
+        Object.values(existingMapping.fields || {}).forEach(col => {
+          if (col) savedColumns.add(col);
+        });
+        // Add columns from additional details
+        if (existingMapping.additionalDetails?.referenceColumn) {
+          savedColumns.add(existingMapping.additionalDetails.referenceColumn);
+        }
+        if (existingMapping.additionalDetails?.entityColumn) {
+          savedColumns.add(existingMapping.additionalDetails.entityColumn);
+        }
+        setDerivedSourceColumns(Array.from(savedColumns).sort());
+      }
     } else {
       // Auto-suggest mappings based on similar column names
       const suggested = autoSuggestMappings(sourceColumns);
@@ -100,6 +123,7 @@ export default function ProcessEditor({
       setIsEditingExisting(false);
       setOriginalProcessId(null);
       setSavedPasswords([]);
+      setDerivedSourceColumns([]);
     }
   }, [existingMapping, sourceColumns, companyName, entity]);
 
@@ -328,19 +352,39 @@ export default function ProcessEditor({
         </div>
       )}
 
+      {/* Notice when editing without file */}
+      {isEditingWithoutFile && (
+        <div style={{
+          background: 'rgba(59, 130, 246, 0.1)',
+          border: '1px solid var(--primary)',
+          borderRadius: '0.375rem',
+          padding: '0.75rem',
+          marginBottom: '1rem',
+          fontSize: '0.875rem'
+        }}>
+          <strong>Editing without file:</strong> You can modify the process settings, display name, entity, passwords, and additional details configuration.
+          To change column mappings, load a file from this company first.
+        </div>
+      )}
+
       {/* Mapping Interface */}
       <div className="process-editor">
         {/* Source Columns */}
         <div className="mapping-column">
-          <h3>Source Columns (from file)</h3>
-          {sourceColumns.map(col => {
+          <h3>Source Columns {isEditingWithoutFile ? '(from saved mapping)' : '(from file)'}</h3>
+          {effectiveSourceColumns.length === 0 ? (
+            <div style={{ padding: '1rem', color: 'var(--text-muted)', fontSize: '0.875rem', textAlign: 'center' }}>
+              No columns available. Load a file to set up mappings.
+            </div>
+          ) : effectiveSourceColumns.map(col => {
             const sample = getSampleValue(col);
             return (
               <div
                 key={col}
                 className={`mapping-field ${selectedSource === col ? 'selected' : ''} ${isSourceMapped(col) ? 'connected' : ''}`}
-                onClick={() => setSelectedSource(selectedSource === col ? null : col)}
+                onClick={() => !isEditingWithoutFile && setSelectedSource(selectedSource === col ? null : col)}
                 title={sample ? `Sample: ${sample}` : ''}
+                style={isEditingWithoutFile ? { cursor: 'default', opacity: 0.7 } : {}}
               >
                 <span>{col}</span>
                 {sample && (
@@ -359,8 +403,8 @@ export default function ProcessEditor({
           <button
             className="connect-btn"
             onClick={handleConnect}
-            disabled={!selectedSource || !selectedTarget}
-            title="Connect selected fields"
+            disabled={isEditingWithoutFile || !selectedSource || !selectedTarget}
+            title={isEditingWithoutFile ? "Load a file to modify mappings" : "Connect selected fields"}
           >
             →
           </button>
@@ -376,12 +420,14 @@ export default function ProcessEditor({
                 key={col.key}
                 className={`mapping-field ${selectedTarget === col.key ? 'selected' : ''} ${sourceCol ? 'connected' : ''} ${col.required ? 'required' : ''}`}
                 onClick={() => {
+                  if (isEditingWithoutFile) return; // Don't allow changes when editing without file
                   if (sourceCol) {
                     removeMapping(col.key);
                   } else {
                     setSelectedTarget(selectedTarget === col.key ? null : col.key);
                   }
                 }}
+                style={isEditingWithoutFile ? { cursor: 'default' } : {}}
               >
                 {col.label}
                 {sourceCol && (
@@ -406,13 +452,15 @@ export default function ProcessEditor({
                 <span className="connection-arrow"> → </span>
                 {target}
               </span>
-              <button
-                className="connection-remove"
-                onClick={() => removeMapping(target)}
-                title="Remove mapping"
-              >
-                ✕
-              </button>
+              {!isEditingWithoutFile && (
+                <button
+                  className="connection-remove"
+                  onClick={() => removeMapping(target)}
+                  title="Remove mapping"
+                >
+                  ✕
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -458,9 +506,10 @@ export default function ProcessEditor({
                 ...prev,
                 entityColumn: e.target.value
               }))}
+              disabled={isEditingWithoutFile}
             >
               <option value="">-- None --</option>
-              {sourceColumns.map(col => (
+              {effectiveSourceColumns.map(col => (
                 <option key={col} value={col}>{col}</option>
               ))}
             </select>
@@ -474,9 +523,10 @@ export default function ProcessEditor({
                 ...prev,
                 referenceColumn: e.target.value
               }))}
+              disabled={isEditingWithoutFile}
             >
               <option value="">-- None --</option>
-              {sourceColumns.map(col => (
+              {effectiveSourceColumns.map(col => (
                 <option key={col} value={col}>{col}</option>
               ))}
             </select>
@@ -683,8 +733,8 @@ export default function ProcessEditor({
           </button>
         </div>
         <div className="action-bar-right" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-          {/* Proceed without saving - for one-off processing */}
-          {onProceedWithoutSaving && (
+          {/* Proceed without saving - for one-off processing (not available when editing without file) */}
+          {onProceedWithoutSaving && !isEditingWithoutFile && (
             <button
               className="btn btn-secondary"
               onClick={handleProceedWithoutSaving}

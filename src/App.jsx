@@ -889,11 +889,8 @@ export default function App() {
               setEditingProcess(process);
               setCurrentTab('process');
               setCurrentStep(STEPS.MAPPING);
-              if (!sourceData) {
-                setError('Please upload a file first to edit a process mapping');
-                setCurrentTab('process');
-                setCurrentStep(STEPS.UPLOAD);
-              }
+              // Clear any previous error - we can now edit without a file loaded
+              setError('');
             }}
             onDelete={handleDeleteProcess}
             onImport={handleImport}
