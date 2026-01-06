@@ -126,6 +126,79 @@ export default function EntityFinder() {
   };
 
   /**
+   * Extract employees from text-based PDF content
+   * Looks for patterns like: "Name Name: 1234567 0.00 3,300.00"
+   * Format: Name(s): ID VAT% LOC_Amount
+   */
+  const extractEmployeesFromText = (rawRows) => {
+    const employees = [];
+
+    // Flatten all rows into text lines
+    const allText = [];
+    for (const row of rawRows) {
+      if (!row) continue;
+      // Join all cells in the row
+      const rowText = row.map(cell => String(cell || '').trim()).join(' ').trim();
+      if (rowText) {
+        allText.push(rowText);
+      }
+      // Also add individual cells as separate entries
+      for (const cell of row) {
+        const cellText = String(cell || '').trim();
+        if (cellText) {
+          allText.push(cellText);
+        }
+      }
+    }
+
+    // Pattern: Name(s): ID followed by numbers (VAT% and Amount)
+    // Examples:
+    // "Callum Witney Mills: 1556708 0.00 3,300.00"
+    // "Spencer Spollin: 1618507 0.00 1,999.00"
+    const employeePattern = /^([A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*)+)\s*:\s*(\d{5,})\s+([\d.,]+)\s+([\d.,]+)$/;
+
+    // Also try a more flexible pattern
+    const flexiblePattern = /([A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*)+)\s*:\s*(\d{5,})\s+([\d.,]+)\s+([\d.,]+)/;
+
+    for (const text of allText) {
+      // Try exact pattern first
+      let match = text.match(employeePattern);
+      if (!match) {
+        match = text.match(flexiblePattern);
+      }
+
+      if (match) {
+        const fullName = match[1].trim();
+        const employeeId = match[2];
+        const vatPercent = match[3]; // Usually 0.00, we ignore this
+        const amount = match[4];
+
+        // Parse name: first word = first name, rest = surname
+        const nameParts = fullName.split(/\s+/).filter(w => w.length >= 2);
+        if (nameParts.length >= 1) {
+          const firstName = nameParts[0];
+          const lastName = nameParts.slice(1).join(' ');
+          const locAmount = parseLocAmount(amount);
+
+          // Only add if we have a valid amount (skip 0.00)
+          if (locAmount > 0) {
+            employees.push({
+              description: `${fullName}: ${employeeId}`,
+              firstName,
+              lastName,
+              locAmount,
+              employeeId,
+              raw: text
+            });
+          }
+        }
+      }
+    }
+
+    return employees;
+  };
+
+  /**
    * Parse LOC amount from string
    */
   const parseLocAmount = (value) => {
@@ -163,8 +236,13 @@ export default function EntityFinder() {
       const result = await parseFile(file);
 
       if (isPdf) {
-        // For PDFs, try to auto-extract
-        const extractedEmployees = extractEmployeesFromInvoice(result.rawRows, true);
+        // For PDFs, try text-based extraction first (for invoice formats)
+        let extractedEmployees = extractEmployeesFromText(result.rawRows);
+
+        // If text extraction didn't work, try column-based extraction
+        if (extractedEmployees.length === 0) {
+          extractedEmployees = extractEmployeesFromInvoice(result.rawRows, true);
+        }
 
         if (extractedEmployees.length === 0) {
           // Show manual column config if auto-extract fails
