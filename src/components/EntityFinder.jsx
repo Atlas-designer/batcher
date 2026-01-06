@@ -1,8 +1,8 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { parseFile } from '../utils/fileParser';
 
 /**
- * Entity Finder - Find employee entities from invoice PDFs by searching batch files
+ * Entity Finder - Find employee entities from invoice PDFs/files by searching batch files
  */
 export default function EntityFinder() {
   // Employees to search for
@@ -14,14 +14,32 @@ export default function EntityFinder() {
   const [manualLastName, setManualLastName] = useState('');
   const [manualLocAmount, setManualLocAmount] = useState('');
 
-  // Invoice PDF parsing state
+  // Invoice file parsing state
   const [invoiceLoading, setInvoiceLoading] = useState(false);
   const [invoiceError, setInvoiceError] = useState('');
+  const [invoiceFile, setInvoiceFile] = useState(null);
+  const [invoiceColumns, setInvoiceColumns] = useState([]);
+  const [invoiceRawRows, setInvoiceRawRows] = useState([]);
+  const [showInvoiceConfig, setShowInvoiceConfig] = useState(false);
+
+  // Invoice column configuration (for Excel/CSV files)
+  const [invoiceDescCol, setInvoiceDescCol] = useState('');
+  const [invoiceNetPriceCol, setInvoiceNetPriceCol] = useState('');
+  const [invoiceFirstNameCol, setInvoiceFirstNameCol] = useState('');
+  const [invoiceLastNameCol, setInvoiceLastNameCol] = useState('');
+  const [invoiceLocCol, setInvoiceLocCol] = useState('');
+  const [useDescriptionMode, setUseDescriptionMode] = useState(true); // true = Description/NetPrice, false = separate columns
+
+  // No LOC option
+  const [noLocPresent, setNoLocPresent] = useState(false);
 
   // Batch file search
   const [batchFiles, setBatchFiles] = useState([]);
   const [selectedFileIndex, setSelectedFileIndex] = useState(-1);
   const [searchLoading, setSearchLoading] = useState(false);
+
+  // Batch file - no LOC matching option
+  const [matchWithoutLoc, setMatchWithoutLoc] = useState(false);
 
   // Output filename
   const [outputFilename, setOutputFilename] = useState('Employee_Entities');
@@ -48,15 +66,77 @@ export default function EntityFinder() {
       lastNameCol: findCol(['lastname', 'last name', 'last_name', 'surname', 'family name']),
       locCol: findCol(['loc amount', 'loc value', 'amount', 'value', 'net price', 'loc']),
       entityCols: [
-        findCol(['additional details', 'additional_details', 'entity', 'company', 'employer']),
-        '',
+        findCol(['additional details', 'additional_details', 'entity', 'company', 'employer', 'employee code', 'payroll']),
+        findCol(['payroll name', 'payroll']),
         ''
       ]
     };
   };
 
+  // Auto-detect invoice columns
+  const autoDetectInvoiceColumns = (columns) => {
+    const findCol = (variations) => {
+      for (const col of columns) {
+        const colLower = col.toLowerCase().trim();
+        if (variations.some(v => colLower === v || colLower.includes(v))) {
+          return col;
+        }
+      }
+      return '';
+    };
+
+    return {
+      descCol: findCol(['description', 'desc', 'item', 'details', 'name']),
+      netPriceCol: findCol(['net price', 'net', 'netprice', 'price', 'amount', 'value', 'total']),
+      firstNameCol: findCol(['firstname', 'first name', 'first_name', 'forename']),
+      lastNameCol: findCol(['lastname', 'last name', 'last_name', 'surname', 'family name']),
+      locCol: findCol(['loc amount', 'loc value', 'amount', 'value', 'net price', 'loc', 'price'])
+    };
+  };
+
   /**
-   * Parse invoice PDF to extract employee descriptions and LOC amounts
+   * Parse name from description field - handles formats like:
+   * "Callum Witney Mills : 1556708" -> firstName: "Callum", lastName: "Witney Mills"
+   * "John Smith" -> firstName: "John", lastName: "Smith"
+   */
+  const parseNameFromDescription = (description) => {
+    if (!description) return { firstName: '', lastName: '' };
+
+    // Remove any ID numbers after colon (e.g., "Name : 123456" -> "Name")
+    let namePart = description.split(':')[0].trim();
+
+    // Also try splitting on common separators that might have numbers after
+    namePart = namePart.split(/\s+\d{5,}$/)[0].trim(); // Remove trailing 5+ digit numbers
+    namePart = namePart.split(/\s+-\s+\d/)[0].trim(); // Remove " - 123..." patterns
+
+    // Get words that look like name parts (letters only, at least 2 chars)
+    const words = namePart.split(/\s+/).filter(w => /^[A-Za-z'-]+$/.test(w) && w.length >= 2);
+
+    if (words.length === 0) {
+      return { firstName: '', lastName: '', rawIdentifier: description };
+    } else if (words.length === 1) {
+      return { firstName: words[0], lastName: '' };
+    } else {
+      // First word is first name, all remaining words are surname
+      return {
+        firstName: words[0],
+        lastName: words.slice(1).join(' ')
+      };
+    }
+  };
+
+  /**
+   * Parse LOC amount from string
+   */
+  const parseLocAmount = (value) => {
+    if (!value) return 0;
+    const cleaned = String(value).replace(/[£$€,\s]/g, '');
+    const amount = parseFloat(cleaned);
+    return isNaN(amount) ? 0 : amount;
+  };
+
+  /**
+   * Handle invoice file upload (PDF, Excel, CSV)
    */
   const handleInvoiceDrop = useCallback(async (e) => {
     e.preventDefault();
@@ -66,42 +146,82 @@ export default function EntityFinder() {
     if (!files || files.length === 0) return;
 
     const file = files[0];
-    if (!file.name.toLowerCase().endsWith('.pdf')) {
-      setInvoiceError('Please upload a PDF file');
+    const fileName = file.name.toLowerCase();
+    const isPdf = fileName.endsWith('.pdf');
+    const isExcelOrCsv = fileName.endsWith('.xlsx') || fileName.endsWith('.xls') || fileName.endsWith('.csv');
+
+    if (!isPdf && !isExcelOrCsv) {
+      setInvoiceError('Please upload a PDF, Excel (.xlsx, .xls), or CSV file');
       return;
     }
 
     setInvoiceLoading(true);
     setInvoiceError('');
+    setInvoiceFile(file);
 
     try {
       const result = await parseFile(file);
-      const extractedEmployees = extractEmployeesFromInvoice(result.rawRows);
 
-      if (extractedEmployees.length === 0) {
-        setInvoiceError('No employee data found in invoice. Make sure it contains "Description" and "Net Price" columns.');
+      if (isPdf) {
+        // For PDFs, try to auto-extract
+        const extractedEmployees = extractEmployeesFromInvoice(result.rawRows, true);
+
+        if (extractedEmployees.length === 0) {
+          // Show manual column config if auto-extract fails
+          setInvoiceRawRows(result.rawRows);
+          const columns = result.rawRows[0]?.map((h, idx) =>
+            String(h || '').trim() || `Column ${idx + 1}`
+          ) || [];
+          setInvoiceColumns(columns);
+
+          const detected = autoDetectInvoiceColumns(columns);
+          setInvoiceDescCol(detected.descCol);
+          setInvoiceNetPriceCol(detected.netPriceCol);
+          setInvoiceFirstNameCol(detected.firstNameCol);
+          setInvoiceLastNameCol(detected.lastNameCol);
+          setInvoiceLocCol(detected.locCol);
+          setShowInvoiceConfig(true);
+          setInvoiceError('Could not auto-extract employees. Please configure columns manually.');
+        } else {
+          setEmployees(extractedEmployees);
+          setSelectedEmployees(new Set(extractedEmployees.map((_, i) => i)));
+          setShowInvoiceConfig(false);
+        }
       } else {
-        setEmployees(extractedEmployees);
-        setSelectedEmployees(new Set(extractedEmployees.map((_, i) => i)));
+        // For Excel/CSV, always show column config
+        setInvoiceRawRows(result.rawRows);
+        const columns = result.rawRows[0]?.map((h, idx) =>
+          String(h || '').trim() || `Column ${idx + 1}`
+        ) || [];
+        setInvoiceColumns(columns);
+
+        const detected = autoDetectInvoiceColumns(columns);
+        setInvoiceDescCol(detected.descCol);
+        setInvoiceNetPriceCol(detected.netPriceCol);
+        setInvoiceFirstNameCol(detected.firstNameCol);
+        setInvoiceLastNameCol(detected.lastNameCol);
+        setInvoiceLocCol(detected.locCol);
+        setShowInvoiceConfig(true);
       }
     } catch (err) {
-      setInvoiceError('Failed to parse invoice: ' + err.message);
+      setInvoiceError('Failed to parse file: ' + err.message);
     }
 
     setInvoiceLoading(false);
   }, []);
 
   /**
-   * Extract employees from invoice PDF data
+   * Extract employees from invoice data
    */
-  const extractEmployeesFromInvoice = (rawRows) => {
+  const extractEmployeesFromInvoice = (rawRows, autoMode = false) => {
     const employees = [];
 
     let descriptionColIndex = -1;
     let netPriceColIndex = -1;
     let headerRowIndex = -1;
 
-    for (let i = 0; i < rawRows.length; i++) {
+    // Find header row with Description and Net Price
+    for (let i = 0; i < Math.min(rawRows.length, 20); i++) {
       const row = rawRows[i];
       if (!row) continue;
 
@@ -111,7 +231,8 @@ export default function EntityFinder() {
           descriptionColIndex = j;
           headerRowIndex = i;
         }
-        if (cell === 'net price' || cell === 'net' || cell === 'netprice' || cell.includes('net price')) {
+        if (cell === 'net price' || cell === 'net' || cell === 'netprice' ||
+            cell.includes('net price') || (cell === 'price' && netPriceColIndex === -1)) {
           netPriceColIndex = j;
         }
       }
@@ -119,24 +240,33 @@ export default function EntityFinder() {
       if (descriptionColIndex !== -1 && netPriceColIndex !== -1) break;
     }
 
-    if (descriptionColIndex === -1 || netPriceColIndex === -1) {
+    if (descriptionColIndex === -1) {
       return [];
     }
 
+    // Process rows after header
     for (let i = headerRowIndex + 1; i < rawRows.length; i++) {
       const row = rawRows[i];
       if (!row) continue;
 
       const description = String(row[descriptionColIndex] || '').trim();
-      const netPrice = String(row[netPriceColIndex] || '').trim();
+      const netPrice = netPriceColIndex !== -1 ? String(row[netPriceColIndex] || '').trim() : '';
 
-      if (!description || !netPrice) continue;
-      if (description.toLowerCase().includes('total') || description.toLowerCase().includes('subtotal')) continue;
+      if (!description) continue;
+
+      // Skip totals and non-employee rows
+      const descLower = description.toLowerCase();
+      if (descLower.includes('total') || descLower.includes('subtotal') ||
+          descLower.includes('vat') || descLower.includes('tax') ||
+          descLower.includes('delivery') || descLower.includes('shipping')) {
+        continue;
+      }
 
       const nameParts = parseNameFromDescription(description);
       const locAmount = parseLocAmount(netPrice);
 
-      if (locAmount > 0) {
+      // Only add if we got a valid first name
+      if (nameParts.firstName) {
         employees.push({
           description,
           firstName: nameParts.firstName,
@@ -151,29 +281,92 @@ export default function EntityFinder() {
   };
 
   /**
-   * Parse name from description field
+   * Process invoice with manual column configuration
    */
-  const parseNameFromDescription = (description) => {
-    const words = description.split(/[\s,\-\/]+/).filter(w => w.length > 1);
-    const nameWords = words.filter(w => /^[A-Za-z]+$/.test(w));
+  const handleProcessInvoice = () => {
+    if (invoiceRawRows.length === 0) return;
 
-    if (nameWords.length >= 2) {
-      return { firstName: nameWords[0], lastName: nameWords[1] };
-    } else if (nameWords.length === 1) {
-      return { firstName: nameWords[0], lastName: '' };
+    const employees = [];
+    const columns = invoiceColumns;
+
+    if (useDescriptionMode) {
+      // Use Description/Net Price mode
+      const descColIdx = columns.indexOf(invoiceDescCol);
+      const netPriceColIdx = columns.indexOf(invoiceNetPriceCol);
+
+      if (descColIdx === -1) {
+        setInvoiceError('Please select a Description column');
+        return;
+      }
+
+      for (let i = 1; i < invoiceRawRows.length; i++) {
+        const row = invoiceRawRows[i];
+        if (!row) continue;
+
+        const description = String(row[descColIdx] || '').trim();
+        const netPrice = netPriceColIdx !== -1 ? String(row[netPriceColIdx] || '').trim() : '';
+
+        if (!description) continue;
+
+        const descLower = description.toLowerCase();
+        if (descLower.includes('total') || descLower.includes('subtotal') ||
+            descLower.includes('vat') || descLower.includes('tax')) {
+          continue;
+        }
+
+        const nameParts = parseNameFromDescription(description);
+        const locAmount = parseLocAmount(netPrice);
+
+        if (nameParts.firstName) {
+          employees.push({
+            description,
+            firstName: nameParts.firstName,
+            lastName: nameParts.lastName,
+            locAmount: noLocPresent ? 0 : locAmount,
+            raw: description
+          });
+        }
+      }
+    } else {
+      // Use separate columns mode
+      const firstNameColIdx = columns.indexOf(invoiceFirstNameCol);
+      const lastNameColIdx = columns.indexOf(invoiceLastNameCol);
+      const locColIdx = columns.indexOf(invoiceLocCol);
+
+      if (firstNameColIdx === -1 && lastNameColIdx === -1) {
+        setInvoiceError('Please select at least a First Name or Last Name column');
+        return;
+      }
+
+      for (let i = 1; i < invoiceRawRows.length; i++) {
+        const row = invoiceRawRows[i];
+        if (!row) continue;
+
+        const firstName = firstNameColIdx !== -1 ? String(row[firstNameColIdx] || '').trim() : '';
+        const lastName = lastNameColIdx !== -1 ? String(row[lastNameColIdx] || '').trim() : '';
+        const locValue = locColIdx !== -1 ? String(row[locColIdx] || '').trim() : '';
+
+        if (!firstName && !lastName) continue;
+
+        employees.push({
+          description: `${firstName} ${lastName}`.trim(),
+          firstName,
+          lastName,
+          locAmount: noLocPresent ? 0 : parseLocAmount(locValue),
+          raw: `${firstName} ${lastName}`.trim()
+        });
+      }
     }
 
-    return { firstName: '', lastName: '', rawIdentifier: description };
-  };
+    if (employees.length === 0) {
+      setInvoiceError('No employees found with current configuration');
+      return;
+    }
 
-  /**
-   * Parse LOC amount from string
-   */
-  const parseLocAmount = (value) => {
-    if (!value) return 0;
-    const cleaned = String(value).replace(/[£$€,\s]/g, '');
-    const amount = parseFloat(cleaned);
-    return isNaN(amount) ? 0 : amount;
+    setEmployees(employees);
+    setSelectedEmployees(new Set(employees.map((_, i) => i)));
+    setShowInvoiceConfig(false);
+    setInvoiceError('');
   };
 
   /**
@@ -181,13 +374,12 @@ export default function EntityFinder() {
    */
   const handleAddManual = () => {
     if (!manualFirstName.trim() && !manualLastName.trim()) return;
-    if (!manualLocAmount.trim()) return;
 
     const newEmployee = {
       description: `${manualFirstName} ${manualLastName}`.trim(),
       firstName: manualFirstName.trim(),
       lastName: manualLastName.trim(),
-      locAmount: parseLocAmount(manualLocAmount),
+      locAmount: noLocPresent ? 0 : parseLocAmount(manualLocAmount),
       isManual: true
     };
 
@@ -356,7 +548,7 @@ export default function EntityFinder() {
           const empLoc = emp.locAmount;
 
           let nameMatch = false;
-          let locMatch = Math.abs(rowLoc - empLoc) < 0.01;
+          let locMatch = matchWithoutLoc || noLocPresent || Math.abs(rowLoc - empLoc) < 0.01;
 
           if (empFirstName && empLastName) {
             nameMatch = rowFirstName === empFirstName && rowLastName === empLastName;
@@ -444,6 +636,12 @@ export default function EntityFinder() {
     setSearchComplete(false);
     setInvoiceError('');
     setOutputFilename('Employee_Entities');
+    setInvoiceFile(null);
+    setInvoiceColumns([]);
+    setInvoiceRawRows([]);
+    setShowInvoiceConfig(false);
+    setNoLocPresent(false);
+    setMatchWithoutLoc(false);
   };
 
   /**
@@ -492,7 +690,7 @@ export default function EntityFinder() {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
         {/* Left Column: Employee Input */}
         <div>
-          {/* Invoice PDF Upload */}
+          {/* Invoice File Upload */}
           <div className="card" style={{ marginBottom: '1rem' }}>
             <h3 style={{ marginBottom: '0.75rem', fontSize: '1rem' }}>
               1. Input Employees to Find
@@ -516,16 +714,21 @@ export default function EntityFinder() {
               <input
                 id="invoice-input"
                 type="file"
-                accept=".pdf"
+                accept=".pdf,.xlsx,.xls,.csv"
                 onChange={handleInvoiceDrop}
                 style={{ display: 'none' }}
               />
               <p style={{ margin: 0, color: 'var(--text-muted)' }}>
-                {invoiceLoading ? 'Processing invoice...' : 'Drop invoice PDF here or click to browse'}
+                {invoiceLoading ? 'Processing file...' : 'Drop invoice file here or click to browse'}
               </p>
               <p style={{ margin: '0.5rem 0 0', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                Will extract from "Description" and "Net Price" columns
+                Supports PDF, Excel (.xlsx, .xls), or CSV
               </p>
+              {invoiceFile && (
+                <p style={{ margin: '0.5rem 0 0', fontSize: '0.75rem', color: 'var(--primary)' }}>
+                  Loaded: {invoiceFile.name}
+                </p>
+              )}
             </div>
 
             {invoiceError && (
@@ -539,6 +742,183 @@ export default function EntityFinder() {
                 fontSize: '0.875rem'
               }}>
                 {invoiceError}
+              </div>
+            )}
+
+            {/* Invoice Column Configuration */}
+            {showInvoiceConfig && invoiceColumns.length > 0 && (
+              <div style={{
+                background: 'var(--bg)',
+                padding: '1rem',
+                borderRadius: '0.5rem',
+                marginBottom: '1rem'
+              }}>
+                <h4 style={{ fontSize: '0.875rem', marginBottom: '0.75rem' }}>Configure Invoice Columns</h4>
+
+                {/* Mode toggle */}
+                <div style={{ marginBottom: '1rem' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' }}>
+                    <input
+                      type="radio"
+                      checked={useDescriptionMode}
+                      onChange={() => setUseDescriptionMode(true)}
+                    />
+                    Description mode (Name : ID format)
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem', marginTop: '0.5rem' }}>
+                    <input
+                      type="radio"
+                      checked={!useDescriptionMode}
+                      onChange={() => setUseDescriptionMode(false)}
+                    />
+                    Separate columns (First Name, Last Name, LOC)
+                  </label>
+                </div>
+
+                {useDescriptionMode ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                        Description Column *
+                      </label>
+                      <select
+                        value={invoiceDescCol}
+                        onChange={(e) => setInvoiceDescCol(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '0.5rem',
+                          border: '1px solid var(--border)',
+                          borderRadius: '0.375rem',
+                          fontSize: '0.875rem'
+                        }}
+                      >
+                        <option value="">-- Select --</option>
+                        {invoiceColumns.map(col => (
+                          <option key={col} value={col}>{col}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                        Net Price Column {noLocPresent ? '(disabled)' : ''}
+                      </label>
+                      <select
+                        value={invoiceNetPriceCol}
+                        onChange={(e) => setInvoiceNetPriceCol(e.target.value)}
+                        disabled={noLocPresent}
+                        style={{
+                          width: '100%',
+                          padding: '0.5rem',
+                          border: '1px solid var(--border)',
+                          borderRadius: '0.375rem',
+                          fontSize: '0.875rem',
+                          opacity: noLocPresent ? 0.5 : 1
+                        }}
+                      >
+                        <option value="">-- Select --</option>
+                        {invoiceColumns.map(col => (
+                          <option key={col} value={col}>{col}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                        First Name Column
+                      </label>
+                      <select
+                        value={invoiceFirstNameCol}
+                        onChange={(e) => setInvoiceFirstNameCol(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '0.5rem',
+                          border: '1px solid var(--border)',
+                          borderRadius: '0.375rem',
+                          fontSize: '0.875rem'
+                        }}
+                      >
+                        <option value="">-- Select --</option>
+                        {invoiceColumns.map(col => (
+                          <option key={col} value={col}>{col}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                        Last Name Column
+                      </label>
+                      <select
+                        value={invoiceLastNameCol}
+                        onChange={(e) => setInvoiceLastNameCol(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '0.5rem',
+                          border: '1px solid var(--border)',
+                          borderRadius: '0.375rem',
+                          fontSize: '0.875rem'
+                        }}
+                      >
+                        <option value="">-- Select --</option>
+                        {invoiceColumns.map(col => (
+                          <option key={col} value={col}>{col}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                        LOC Amount {noLocPresent ? '(disabled)' : ''}
+                      </label>
+                      <select
+                        value={invoiceLocCol}
+                        onChange={(e) => setInvoiceLocCol(e.target.value)}
+                        disabled={noLocPresent}
+                        style={{
+                          width: '100%',
+                          padding: '0.5rem',
+                          border: '1px solid var(--border)',
+                          borderRadius: '0.375rem',
+                          fontSize: '0.875rem',
+                          opacity: noLocPresent ? 0.5 : 1
+                        }}
+                      >
+                        <option value="">-- Select --</option>
+                        {invoiceColumns.map(col => (
+                          <option key={col} value={col}>{col}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
+
+                {/* No LOC checkbox */}
+                <label style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  cursor: 'pointer',
+                  marginTop: '0.75rem',
+                  fontSize: '0.875rem',
+                  padding: '0.5rem',
+                  background: noLocPresent ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
+                  borderRadius: '0.25rem'
+                }}>
+                  <input
+                    type="checkbox"
+                    checked={noLocPresent}
+                    onChange={(e) => setNoLocPresent(e.target.checked)}
+                  />
+                  No LOC Value Present (match by name only)
+                </label>
+
+                <button
+                  className="btn btn-primary"
+                  onClick={handleProcessInvoice}
+                  style={{ marginTop: '1rem', width: '100%' }}
+                >
+                  Extract Employees
+                </button>
               </div>
             )}
 
@@ -574,20 +954,22 @@ export default function EntityFinder() {
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <input
                   type="text"
-                  placeholder="LOC Amount (e.g. 1200.00)"
+                  placeholder={noLocPresent ? "LOC not required" : "LOC Amount (e.g. 1200.00)"}
                   value={manualLocAmount}
                   onChange={(e) => setManualLocAmount(e.target.value)}
+                  disabled={noLocPresent}
                   style={{
                     flex: 1,
                     padding: '0.5rem',
                     border: '1px solid var(--border)',
-                    borderRadius: '0.375rem'
+                    borderRadius: '0.375rem',
+                    opacity: noLocPresent ? 0.5 : 1
                   }}
                 />
                 <button
                   className="btn btn-primary"
                   onClick={handleAddManual}
-                  disabled={(!manualFirstName.trim() && !manualLastName.trim()) || !manualLocAmount.trim()}
+                  disabled={!manualFirstName.trim() && !manualLastName.trim()}
                 >
                   Add
                 </button>
@@ -639,7 +1021,7 @@ export default function EntityFinder() {
                           {isFound && <span style={{ color: 'var(--success)', fontSize: '0.75rem', marginLeft: '0.5rem' }}>Found!</span>}
                         </div>
                         <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                          LOC: {emp.locAmount.toFixed(2)}
+                          {emp.locAmount > 0 ? `LOC: ${emp.locAmount.toFixed(2)}` : 'No LOC'}
                           {emp.raw && emp.raw !== `${emp.firstName} ${emp.lastName}` && ` | ${emp.raw}`}
                         </div>
                       </div>
@@ -747,7 +1129,7 @@ export default function EntityFinder() {
               </p>
 
               {/* Name and LOC columns */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem', marginBottom: '1rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '0.5rem' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
                     First Name Column
@@ -790,28 +1172,53 @@ export default function EntityFinder() {
                     ))}
                   </select>
                 </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-                    LOC Amount Column
-                  </label>
-                  <select
-                    value={selectedFile.locCol}
-                    onChange={(e) => updateFileConfig('locCol', e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '0.5rem',
-                      border: '1px solid var(--border)',
-                      borderRadius: '0.375rem',
-                      fontSize: '0.875rem'
-                    }}
-                  >
-                    <option value="">-- Select --</option>
-                    {selectedFile.columns.map(col => (
-                      <option key={col} value={col}>{col}</option>
-                    ))}
-                  </select>
-                </div>
               </div>
+
+              <div style={{ marginBottom: '0.75rem' }}>
+                <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                  LOC Amount Column {(matchWithoutLoc || noLocPresent) ? '(disabled - matching by name only)' : ''}
+                </label>
+                <select
+                  value={selectedFile.locCol}
+                  onChange={(e) => updateFileConfig('locCol', e.target.value)}
+                  disabled={matchWithoutLoc || noLocPresent}
+                  style={{
+                    width: '100%',
+                    padding: '0.5rem',
+                    border: '1px solid var(--border)',
+                    borderRadius: '0.375rem',
+                    fontSize: '0.875rem',
+                    opacity: (matchWithoutLoc || noLocPresent) ? 0.5 : 1
+                  }}
+                >
+                  <option value="">-- Select --</option>
+                  {selectedFile.columns.map(col => (
+                    <option key={col} value={col}>{col}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Match without LOC checkbox */}
+              {!noLocPresent && (
+                <label style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  cursor: 'pointer',
+                  fontSize: '0.875rem',
+                  padding: '0.5rem',
+                  background: matchWithoutLoc ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
+                  borderRadius: '0.25rem',
+                  marginBottom: '0.75rem'
+                }}>
+                  <input
+                    type="checkbox"
+                    checked={matchWithoutLoc}
+                    onChange={(e) => setMatchWithoutLoc(e.target.checked)}
+                  />
+                  Match by name only (ignore LOC amount)
+                </label>
+              )}
 
               {/* Entity columns */}
               <div>
@@ -905,7 +1312,7 @@ export default function EntityFinder() {
                         fontSize: '0.875rem'
                       }}
                     >
-                      {emp.firstName} {emp.lastName} (LOC: {emp.locAmount.toFixed(2)})
+                      {emp.firstName} {emp.lastName} {emp.locAmount > 0 ? `(LOC: ${emp.locAmount.toFixed(2)})` : ''}
                     </div>
                   ))}
                   <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
