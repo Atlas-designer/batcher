@@ -347,10 +347,10 @@ export default function App() {
   // Handle saving a new/updated process
   const handleSaveProcess = async (processConfig) => {
     try {
-      // Include data config in the process
+      // Include data config in the process (use existing dataConfig from the process if editing without file)
       const fullConfig = {
         ...processConfig,
-        dataConfig: dataConfig
+        dataConfig: dataConfig || processConfig.dataConfig || editingProcess?.dataConfig
       };
 
       let saved;
@@ -370,8 +370,18 @@ export default function App() {
       }
 
       await loadProcesses();
-      applyProcessMapping(sourceData, saved);
-      setCurrentStep(STEPS.PREVIEW);
+
+      // If we have source data, apply mapping and go to preview
+      // If editing without file, just go back to manage tab
+      if (sourceData) {
+        applyProcessMapping(sourceData, saved);
+        setCurrentStep(STEPS.PREVIEW);
+      } else {
+        // Edited without file - go back to manage tab
+        setCurrentTab('manage');
+        setCurrentStep(STEPS.UPLOAD);
+      }
+
       setEditingProcess(null);
       setLivePreviewData(null);
     } catch (err) {
@@ -677,81 +687,117 @@ export default function App() {
               </>
             )}
 
-            {currentStep === STEPS.MAPPING && sourceData && (
+            {currentStep === STEPS.MAPPING && (sourceData || editingProcess) && (
               <>
-                {/* Process Selection and Info */}
-                <div className="card" style={{ marginBottom: '1rem' }}>
-                  <div style={{ display: 'flex', gap: '2rem', alignItems: 'flex-start', flexWrap: 'wrap' }}>
-                    <div style={{ flex: 1, minWidth: '200px' }}>
-                      <p style={{ marginBottom: '0.5rem' }}>
-                        <strong>Detected Company:</strong> {detectedCompany}
-                        {detectedEntity && (
-                          <span style={{ marginLeft: '1rem' }}>
-                            <strong>Entity:</strong> {detectedEntity}
-                          </span>
-                        )}
-                      </p>
+                {/* Show full UI when file is loaded, simplified UI when editing without file */}
+                {sourceData ? (
+                  <>
+                    {/* Process Selection and Info */}
+                    <div className="card" style={{ marginBottom: '1rem' }}>
+                      <div style={{ display: 'flex', gap: '2rem', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                        <div style={{ flex: 1, minWidth: '200px' }}>
+                          <p style={{ marginBottom: '0.5rem' }}>
+                            <strong>Detected Company:</strong> {detectedCompany}
+                            {detectedEntity && (
+                              <span style={{ marginLeft: '1rem' }}>
+                                <strong>Entity:</strong> {detectedEntity}
+                              </span>
+                            )}
+                          </p>
+                          <button
+                            className="btn btn-secondary"
+                            onClick={() => setCurrentStep(STEPS.CONFIGURE)}
+                            style={{ marginTop: '0.5rem' }}
+                          >
+                            ← Back to Data Config
+                          </button>
+                        </div>
+
+                        {/* Process Selection Dropdown */}
+                        <div style={{ minWidth: '250px' }}>
+                          <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>
+                            Select Mapping Process
+                          </label>
+                          <select
+                            value={selectedProcessId}
+                            onChange={(e) => handleProcessSelect(e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '0.5rem',
+                              border: '1px solid var(--border)',
+                              borderRadius: '0.375rem',
+                              fontSize: '0.875rem'
+                            }}
+                          >
+                            <option value="">-- Create New Process --</option>
+                            {processes.map(p => (
+                              <option key={p.id} value={p.id}>
+                                {p.displayName || p.companyName}
+                                {p.displayName && p.displayName !== p.companyName && ` (${p.companyName})`}
+                              </option>
+                            ))}
+                          </select>
+                          <small style={{ color: 'var(--text-muted)' }}>
+                            {selectedProcessId ? 'Edit existing or select "Create New"' : 'Configure a new mapping process'}
+                          </small>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Source Data Preview */}
+                    <DataPreview
+                      data={sourceData}
+                      columns={sourceColumns}
+                      title={`Source Data (${sourceData.length} rows)`}
+                      maxRows={5}
+                    />
+                  </>
+                ) : (
+                  /* Editing without file - show simplified header */
+                  <div className="card" style={{ marginBottom: '1rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+                      <div>
+                        <h3 style={{ margin: 0 }}>
+                          Editing: {editingProcess?.displayName || editingProcess?.companyName}
+                        </h3>
+                        <p style={{ color: 'var(--text-muted)', margin: '0.5rem 0 0 0', fontSize: '0.875rem' }}>
+                          No file loaded - you can edit process settings, but not column mappings
+                        </p>
+                      </div>
                       <button
                         className="btn btn-secondary"
-                        onClick={() => setCurrentStep(STEPS.CONFIGURE)}
-                        style={{ marginTop: '0.5rem' }}
-                      >
-                        ← Back to Data Config
-                      </button>
-                    </div>
-
-                    {/* Process Selection Dropdown */}
-                    <div style={{ minWidth: '250px' }}>
-                      <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>
-                        Select Mapping Process
-                      </label>
-                      <select
-                        value={selectedProcessId}
-                        onChange={(e) => handleProcessSelect(e.target.value)}
-                        style={{
-                          width: '100%',
-                          padding: '0.5rem',
-                          border: '1px solid var(--border)',
-                          borderRadius: '0.375rem',
-                          fontSize: '0.875rem'
+                        onClick={() => {
+                          setEditingProcess(null);
+                          setCurrentStep(STEPS.UPLOAD);
                         }}
                       >
-                        <option value="">-- Create New Process --</option>
-                        {processes.map(p => (
-                          <option key={p.id} value={p.id}>
-                            {p.displayName || p.companyName}
-                            {p.displayName && p.displayName !== p.companyName && ` (${p.companyName})`}
-                          </option>
-                        ))}
-                      </select>
-                      <small style={{ color: 'var(--text-muted)' }}>
-                        {selectedProcessId ? 'Edit existing or select "Create New"' : 'Configure a new mapping process'}
-                      </small>
+                        ← Back to Upload
+                      </button>
                     </div>
                   </div>
-                </div>
-
-                {/* Source Data Preview */}
-                <DataPreview
-                  data={sourceData}
-                  columns={sourceColumns}
-                  title={`Source Data (${sourceData.length} rows)`}
-                  maxRows={5}
-                />
+                )}
 
                 {/* Process Editor */}
                 <ProcessEditor
                   sourceColumns={sourceColumns}
                   sourceData={sourceData}
                   headerInfoRows={headerInfoRows}
-                  companyName={detectedCompany}
-                  entity={detectedEntity}
+                  companyName={detectedCompany || editingProcess?.companyName}
+                  entity={detectedEntity || editingProcess?.entity}
                   existingMapping={matchedProcess || editingProcess}
                   allProcesses={processes}
                   onSave={handleSaveProcess}
-                  onCancel={handleReset}
+                  onCancel={() => {
+                    // If editing without file, go back to upload/manage
+                    if (!sourceData && editingProcess) {
+                      setEditingProcess(null);
+                      setCurrentStep(STEPS.UPLOAD);
+                    } else {
+                      handleReset();
+                    }
+                  }}
                   onPreviewUpdate={handlePreviewUpdate}
-                  onProceedWithoutSaving={handleProceedWithoutSaving}
+                  onProceedWithoutSaving={sourceData ? handleProceedWithoutSaving : null}
                 />
 
                 {/* Live Output Preview */}
