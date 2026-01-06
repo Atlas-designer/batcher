@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { parseFile } from '../utils/fileParser';
 
 /**
@@ -20,14 +20,40 @@ export default function EntityFinder() {
 
   // Batch file search
   const [batchFiles, setBatchFiles] = useState([]);
-  const [entityColumns, setEntityColumns] = useState(['', '', '']); // Up to 3 entity columns
-  const [availableColumns, setAvailableColumns] = useState([]);
+  const [selectedFileIndex, setSelectedFileIndex] = useState(-1);
   const [searchLoading, setSearchLoading] = useState(false);
+
+  // Output filename
+  const [outputFilename, setOutputFilename] = useState('Employee_Entities');
 
   // Results
   const [foundEmployees, setFoundEmployees] = useState([]);
   const [missingEmployees, setMissingEmployees] = useState([]);
   const [searchComplete, setSearchComplete] = useState(false);
+
+  // Auto-detect column mappings for a file
+  const autoDetectColumns = (columns) => {
+    const findCol = (variations) => {
+      for (const col of columns) {
+        const colLower = col.toLowerCase().trim();
+        if (variations.some(v => colLower === v || colLower.includes(v))) {
+          return col;
+        }
+      }
+      return '';
+    };
+
+    return {
+      firstNameCol: findCol(['firstname', 'first name', 'first_name', 'forename']),
+      lastNameCol: findCol(['lastname', 'last name', 'last_name', 'surname', 'family name']),
+      locCol: findCol(['loc amount', 'loc value', 'amount', 'value', 'net price', 'loc']),
+      entityCols: [
+        findCol(['additional details', 'additional_details', 'entity', 'company', 'employer']),
+        '',
+        ''
+      ]
+    };
+  };
 
   /**
    * Parse invoice PDF to extract employee descriptions and LOC amounts
@@ -67,12 +93,10 @@ export default function EntityFinder() {
 
   /**
    * Extract employees from invoice PDF data
-   * Looks for Description and Net Price columns
    */
   const extractEmployeesFromInvoice = (rawRows) => {
     const employees = [];
 
-    // Find the row with Description and Net Price headers
     let descriptionColIndex = -1;
     let netPriceColIndex = -1;
     let headerRowIndex = -1;
@@ -99,7 +123,6 @@ export default function EntityFinder() {
       return [];
     }
 
-    // Extract data rows after header
     for (let i = headerRowIndex + 1; i < rawRows.length; i++) {
       const row = rawRows[i];
       if (!row) continue;
@@ -107,11 +130,9 @@ export default function EntityFinder() {
       const description = String(row[descriptionColIndex] || '').trim();
       const netPrice = String(row[netPriceColIndex] || '').trim();
 
-      // Skip empty rows or totals
       if (!description || !netPrice) continue;
       if (description.toLowerCase().includes('total') || description.toLowerCase().includes('subtotal')) continue;
 
-      // Parse name from description (could be "FirstName LastName" or agreement number)
       const nameParts = parseNameFromDescription(description);
       const locAmount = parseLocAmount(netPrice);
 
@@ -131,32 +152,18 @@ export default function EntityFinder() {
 
   /**
    * Parse name from description field
-   * Could be "FirstName LastName", agreement number, or payroll number
    */
   const parseNameFromDescription = (description) => {
-    // Try to extract name (words that look like names)
     const words = description.split(/[\s,\-\/]+/).filter(w => w.length > 1);
-
-    // Check if first two words look like a name (alphabetic)
     const nameWords = words.filter(w => /^[A-Za-z]+$/.test(w));
 
     if (nameWords.length >= 2) {
-      return {
-        firstName: nameWords[0],
-        lastName: nameWords[1]
-      };
+      return { firstName: nameWords[0], lastName: nameWords[1] };
     } else if (nameWords.length === 1) {
-      return {
-        firstName: nameWords[0],
-        lastName: ''
-      };
+      return { firstName: nameWords[0], lastName: '' };
     }
 
-    return {
-      firstName: '',
-      lastName: '',
-      rawIdentifier: description
-    };
+    return { firstName: '', lastName: '', rawIdentifier: description };
   };
 
   /**
@@ -164,7 +171,6 @@ export default function EntityFinder() {
    */
   const parseLocAmount = (value) => {
     if (!value) return 0;
-    // Remove currency symbols and commas
     const cleaned = String(value).replace(/[£$€,\s]/g, '');
     const amount = parseFloat(cleaned);
     return isNaN(amount) ? 0 : amount;
@@ -189,7 +195,6 @@ export default function EntityFinder() {
     setEmployees(prev => [...prev, newEmployee]);
     setSelectedEmployees(prev => new Set([...prev, newIndex]));
 
-    // Clear inputs
     setManualFirstName('');
     setManualLastName('');
     setManualLocAmount('');
@@ -232,38 +237,83 @@ export default function EntityFinder() {
     if (!files || files.length === 0) return;
 
     const newFiles = [];
-    const allColumns = new Set(availableColumns);
 
     for (const file of files) {
       try {
         const result = await parseFile(file);
-        // Get columns from first row (assuming it's headers)
         const columns = result.rawRows[0]?.map((h, idx) =>
           String(h || '').trim() || `Column ${idx + 1}`
         ) || [];
 
-        columns.forEach(c => allColumns.add(c));
+        // Auto-detect column mappings
+        const detected = autoDetectColumns(columns);
 
         newFiles.push({
           name: file.name,
           rawRows: result.rawRows,
           columns,
-          searched: false
+          searched: false,
+          // Per-file column configuration
+          firstNameCol: detected.firstNameCol,
+          lastNameCol: detected.lastNameCol,
+          locCol: detected.locCol,
+          entityCols: detected.entityCols
         });
       } catch (err) {
         console.error('Failed to parse batch file:', file.name, err);
       }
     }
 
-    setBatchFiles(prev => [...prev, ...newFiles]);
-    setAvailableColumns(Array.from(allColumns));
-  }, [availableColumns]);
+    setBatchFiles(prev => {
+      const updated = [...prev, ...newFiles];
+      // Auto-select first file if none selected
+      if (selectedFileIndex === -1 && updated.length > 0) {
+        setSelectedFileIndex(prev.length); // Select first new file
+      }
+      return updated;
+    });
+  }, [selectedFileIndex]);
 
   /**
    * Remove a batch file
    */
   const removeBatchFile = (index) => {
-    setBatchFiles(prev => prev.filter((_, i) => i !== index));
+    setBatchFiles(prev => {
+      const updated = prev.filter((_, i) => i !== index);
+      // Adjust selected index
+      if (selectedFileIndex === index) {
+        setSelectedFileIndex(updated.length > 0 ? 0 : -1);
+      } else if (selectedFileIndex > index) {
+        setSelectedFileIndex(selectedFileIndex - 1);
+      }
+      return updated;
+    });
+  };
+
+  /**
+   * Update column config for selected file
+   */
+  const updateFileConfig = (field, value) => {
+    if (selectedFileIndex === -1) return;
+    setBatchFiles(prev => {
+      const updated = [...prev];
+      updated[selectedFileIndex] = { ...updated[selectedFileIndex], [field]: value };
+      return updated;
+    });
+  };
+
+  /**
+   * Update entity column for selected file
+   */
+  const updateEntityCol = (entityIndex, value) => {
+    if (selectedFileIndex === -1) return;
+    setBatchFiles(prev => {
+      const updated = [...prev];
+      const entityCols = [...updated[selectedFileIndex].entityCols];
+      entityCols[entityIndex] = value;
+      updated[selectedFileIndex] = { ...updated[selectedFileIndex], entityCols };
+      return updated;
+    });
   };
 
   /**
@@ -277,33 +327,27 @@ export default function EntityFinder() {
     const newFound = [...foundEmployees];
     const stillMissing = [];
 
-    // Get employees to search for (only selected ones that aren't already found)
     const foundIds = new Set(foundEmployees.map(f => f.originalIndex));
     const employeesToSearch = employees
       .map((emp, index) => ({ ...emp, originalIndex: index }))
       .filter(emp => selectedEmployees.has(emp.originalIndex) && !foundIds.has(emp.originalIndex));
 
-    // Search each batch file
     for (const batchFile of batchFiles) {
       if (batchFile.searched) continue;
 
       const columns = batchFile.columns;
+      const firstNameColIdx = columns.indexOf(batchFile.firstNameCol);
+      const lastNameColIdx = columns.indexOf(batchFile.lastNameCol);
+      const locColIdx = columns.indexOf(batchFile.locCol);
 
-      // Find first name and last name column indices
-      const firstNameColIdx = findColumnIndex(columns, ['firstname', 'first name', 'first_name', 'forename']);
-      const lastNameColIdx = findColumnIndex(columns, ['lastname', 'last name', 'last_name', 'surname', 'family name']);
-      const locColIdx = findColumnIndex(columns, ['loc amount', 'loc value', 'amount', 'value', 'net price', 'loc']);
-
-      // Search data rows (skip header row)
       for (let rowIdx = 1; rowIdx < batchFile.rawRows.length; rowIdx++) {
         const row = batchFile.rawRows[rowIdx];
         if (!row) continue;
 
-        const rowFirstName = String(row[firstNameColIdx] || '').toLowerCase().trim();
-        const rowLastName = String(row[lastNameColIdx] || '').toLowerCase().trim();
-        const rowLoc = parseLocAmount(row[locColIdx]);
+        const rowFirstName = firstNameColIdx !== -1 ? String(row[firstNameColIdx] || '').toLowerCase().trim() : '';
+        const rowLastName = lastNameColIdx !== -1 ? String(row[lastNameColIdx] || '').toLowerCase().trim() : '';
+        const rowLoc = locColIdx !== -1 ? parseLocAmount(row[locColIdx]) : 0;
 
-        // Try to match against employees
         for (const emp of employeesToSearch) {
           if (foundIds.has(emp.originalIndex)) continue;
 
@@ -311,23 +355,19 @@ export default function EntityFinder() {
           const empLastName = emp.lastName.toLowerCase().trim();
           const empLoc = emp.locAmount;
 
-          // Match criteria: names match (not case sensitive) AND LOC matches
           let nameMatch = false;
-          let locMatch = Math.abs(rowLoc - empLoc) < 0.01; // Allow tiny float differences
+          let locMatch = Math.abs(rowLoc - empLoc) < 0.01;
 
           if (empFirstName && empLastName) {
-            // Full name search
             nameMatch = rowFirstName === empFirstName && rowLastName === empLastName;
           } else if (empFirstName || empLastName) {
-            // Partial name search
             nameMatch = rowFirstName === empFirstName || rowLastName === empLastName ||
               rowFirstName === empLastName || rowLastName === empFirstName;
           }
 
           if (nameMatch && locMatch) {
-            // Found! Extract entity columns
             const entities = [];
-            entityColumns.forEach((colName, idx) => {
+            batchFile.entityCols.forEach((colName) => {
               if (colName) {
                 const colIdx = columns.indexOf(colName);
                 if (colIdx !== -1) {
@@ -348,11 +388,9 @@ export default function EntityFinder() {
         }
       }
 
-      // Mark file as searched
       batchFile.searched = true;
     }
 
-    // Update missing list
     employeesToSearch.forEach(emp => {
       if (!foundIds.has(emp.originalIndex)) {
         stillMissing.push(emp);
@@ -366,28 +404,13 @@ export default function EntityFinder() {
   };
 
   /**
-   * Find column index by common name variations
-   */
-  const findColumnIndex = (columns, variations) => {
-    for (let i = 0; i < columns.length; i++) {
-      const colName = columns[i].toLowerCase().trim();
-      if (variations.some(v => colName === v || colName.includes(v))) {
-        return i;
-      }
-    }
-    return -1;
-  };
-
-  /**
    * Download found employees as CSV file
    */
   const handleDownload = () => {
     if (foundEmployees.length === 0) return;
 
-    // Build CSV with headers: First Name, Last Name, Entity (combined with /)
     const headers = ['First Name', 'Last Name', 'Entity'];
     const rows = foundEmployees.map(emp => {
-      // Join entities with / (only include non-empty ones)
       const entityCombined = emp.entities.filter(e => e).join('/');
       return [
         emp.firstName || '',
@@ -401,7 +424,7 @@ export default function EntityFinder() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'Employee_Entities.csv';
+    a.download = `${outputFilename || 'Employee_Entities'}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -415,33 +438,54 @@ export default function EntityFinder() {
     setEmployees([]);
     setSelectedEmployees(new Set());
     setBatchFiles([]);
+    setSelectedFileIndex(-1);
     setFoundEmployees([]);
     setMissingEmployees([]);
     setSearchComplete(false);
-    setEntityColumns(['', '', '']);
-    setAvailableColumns([]);
     setInvoiceError('');
+    setOutputFilename('Employee_Entities');
   };
 
   /**
-   * Clear only batch files and search results (to add more files)
+   * Clear only batch files and search results
    */
   const handleClearBatchFiles = () => {
-    setBatchFiles([]);
+    setBatchFiles(prev => prev.map(f => ({ ...f, searched: false })));
     setSearchComplete(false);
-    // Keep found and missing for reference
   };
+
+  const selectedFile = selectedFileIndex >= 0 ? batchFiles[selectedFileIndex] : null;
 
   return (
     <div className="entity-finder">
       <div className="card" style={{ marginBottom: '1rem' }}>
-        <h2 style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <span style={{ fontSize: '1.5rem' }}>&#128269;</span>
-          Entity Finder
-        </h2>
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-          Find employee entities by matching invoice data against batch files.
-        </p>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
+          <div>
+            <h2 style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span style={{ fontSize: '1.5rem' }}>&#128269;</span>
+              Entity Finder
+            </h2>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', margin: 0 }}>
+              Find employee entities by matching invoice data against batch files.
+            </p>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <label style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>Output filename:</label>
+            <input
+              type="text"
+              value={outputFilename}
+              onChange={(e) => setOutputFilename(e.target.value)}
+              placeholder="Employee_Entities"
+              style={{
+                padding: '0.5rem',
+                border: '1px solid var(--border)',
+                borderRadius: '0.375rem',
+                width: '200px'
+              }}
+            />
+            <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>.csv</span>
+          </div>
+        </div>
       </div>
 
       {/* Two column layout */}
@@ -454,7 +498,6 @@ export default function EntityFinder() {
               1. Input Employees to Find
             </h3>
 
-            {/* Invoice Drop Zone */}
             <div
               onDrop={handleInvoiceDrop}
               onDragOver={(e) => e.preventDefault()}
@@ -650,34 +693,39 @@ export default function EntityFinder() {
             {batchFiles.length > 0 && (
               <div style={{ marginTop: '1rem' }}>
                 <p style={{ fontSize: '0.875rem', marginBottom: '0.5rem' }}>
-                  {batchFiles.length} file(s) loaded:
+                  {batchFiles.length} file(s) loaded - click to configure:
                 </p>
                 {batchFiles.map((file, idx) => (
                   <div
                     key={idx}
+                    onClick={() => setSelectedFileIndex(idx)}
                     style={{
                       display: 'flex',
                       justifyContent: 'space-between',
                       alignItems: 'center',
-                      padding: '0.25rem 0.5rem',
-                      background: 'var(--bg)',
+                      padding: '0.5rem',
+                      background: selectedFileIndex === idx ? 'var(--primary)' : 'var(--bg)',
+                      color: selectedFileIndex === idx ? 'white' : 'inherit',
                       borderRadius: '0.25rem',
                       marginBottom: '0.25rem',
-                      fontSize: '0.875rem'
+                      fontSize: '0.875rem',
+                      cursor: 'pointer',
+                      transition: 'background 0.2s'
                     }}
                   >
                     <span>
                       {file.name}
-                      {file.searched && <span style={{ color: 'var(--success)', marginLeft: '0.5rem' }}>&#10003;</span>}
+                      {file.searched && <span style={{ color: selectedFileIndex === idx ? 'white' : 'var(--success)', marginLeft: '0.5rem' }}>&#10003;</span>}
                     </span>
                     <button
-                      onClick={() => removeBatchFile(idx)}
+                      onClick={(e) => { e.stopPropagation(); removeBatchFile(idx); }}
                       style={{
                         background: 'none',
                         border: 'none',
-                        color: 'var(--danger)',
+                        color: selectedFileIndex === idx ? 'white' : 'var(--danger)',
                         cursor: 'pointer',
-                        padding: '0.25rem'
+                        padding: '0.25rem',
+                        fontSize: '1rem'
                       }}
                     >
                       &times;
@@ -688,40 +736,109 @@ export default function EntityFinder() {
             )}
           </div>
 
-          {/* Entity Column Selection */}
-          {availableColumns.length > 0 && (
+          {/* Column Configuration for Selected File */}
+          {selectedFile && (
             <div className="card" style={{ marginBottom: '1rem' }}>
               <h3 style={{ marginBottom: '0.75rem', fontSize: '1rem' }}>
-                3. Select Entity Columns (up to 3)
+                3. Configure: {selectedFile.name}
               </h3>
               <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
-                These columns will be extracted for matched employees (separated by /)
+                Set which columns to use for matching and entity extraction
               </p>
 
-              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                {[0, 1, 2].map(idx => (
+              {/* Name and LOC columns */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem', marginBottom: '1rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                    First Name Column
+                  </label>
                   <select
-                    key={idx}
-                    value={entityColumns[idx]}
-                    onChange={(e) => {
-                      const newCols = [...entityColumns];
-                      newCols[idx] = e.target.value;
-                      setEntityColumns(newCols);
-                    }}
+                    value={selectedFile.firstNameCol}
+                    onChange={(e) => updateFileConfig('firstNameCol', e.target.value)}
                     style={{
-                      flex: 1,
-                      minWidth: '120px',
+                      width: '100%',
                       padding: '0.5rem',
                       border: '1px solid var(--border)',
-                      borderRadius: '0.375rem'
+                      borderRadius: '0.375rem',
+                      fontSize: '0.875rem'
                     }}
                   >
-                    <option value="">Entity {idx + 1} (optional)</option>
-                    {availableColumns.map(col => (
+                    <option value="">-- Select --</option>
+                    {selectedFile.columns.map(col => (
                       <option key={col} value={col}>{col}</option>
                     ))}
                   </select>
-                ))}
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                    Last Name Column
+                  </label>
+                  <select
+                    value={selectedFile.lastNameCol}
+                    onChange={(e) => updateFileConfig('lastNameCol', e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '0.5rem',
+                      border: '1px solid var(--border)',
+                      borderRadius: '0.375rem',
+                      fontSize: '0.875rem'
+                    }}
+                  >
+                    <option value="">-- Select --</option>
+                    {selectedFile.columns.map(col => (
+                      <option key={col} value={col}>{col}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                    LOC Amount Column
+                  </label>
+                  <select
+                    value={selectedFile.locCol}
+                    onChange={(e) => updateFileConfig('locCol', e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '0.5rem',
+                      border: '1px solid var(--border)',
+                      borderRadius: '0.375rem',
+                      fontSize: '0.875rem'
+                    }}
+                  >
+                    <option value="">-- Select --</option>
+                    {selectedFile.columns.map(col => (
+                      <option key={col} value={col}>{col}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Entity columns */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                  Entity Columns (up to 3, separated by / in output)
+                </label>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  {[0, 1, 2].map(idx => (
+                    <select
+                      key={idx}
+                      value={selectedFile.entityCols[idx]}
+                      onChange={(e) => updateEntityCol(idx, e.target.value)}
+                      style={{
+                        flex: 1,
+                        padding: '0.5rem',
+                        border: '1px solid var(--border)',
+                        borderRadius: '0.375rem',
+                        fontSize: '0.875rem'
+                      }}
+                    >
+                      <option value="">Entity {idx + 1}</option>
+                      {selectedFile.columns.map(col => (
+                        <option key={col} value={col}>{col}</option>
+                      ))}
+                    </select>
+                  ))}
+                </div>
               </div>
             </div>
           )}
