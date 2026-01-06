@@ -9,6 +9,7 @@ import ProcessManager from './components/ProcessManager';
 import ImportDialog from './components/ImportDialog';
 import PasswordDialog from './components/PasswordDialog';
 import AdminAdam from './components/AdminAdam';
+import EntityFinder from './components/EntityFinder';
 import { parseFile, parseAndCombinePDFs } from './utils/fileParser';
 import { extractCompanyAndEntity, generateOutputFilename } from './utils/filenameParser';
 import { applyMapping, downloadCSV, OUTPUT_COLUMNS } from './utils/outputFormatter';
@@ -579,6 +580,12 @@ export default function App() {
             >
               Admin Adam
             </button>
+            <button
+              className={`tab ${currentTab === 'entity' ? 'active' : ''}`}
+              onClick={() => setCurrentTab('entity')}
+            >
+              Entity Finder
+            </button>
           </div>
           <button className="btn btn-secondary" onClick={handleLogout}>
             Logout
@@ -892,9 +899,12 @@ export default function App() {
             onImport={handleImport}
             onRefresh={loadProcesses}
           />
-        ) : (
+        ) : currentTab === 'adam' ? (
           /* Admin Adam Tab */
           <AdminAdam />
+        ) : (
+          /* Entity Finder Tab */
+          <EntityFinder />
         )}
 
         {/* Import Dialog */}
