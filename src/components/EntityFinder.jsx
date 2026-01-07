@@ -493,7 +493,8 @@ export default function EntityFinder() {
 
   /**
    * Process selected PDF rows into employees
-   * Tries to pair name rows with amount rows
+   * Only processes rows that look like employee names (with : ID pattern)
+   * Automatically finds LOC amounts from nearby rows
    */
   const handleProcessPdfRows = () => {
     if (selectedPdfRows.size === 0) return;
@@ -505,28 +506,40 @@ export default function EntityFinder() {
       const rowText = pdfRows[idx];
       if (!rowText) continue;
 
-      // Try to parse as "Name: ID" format first
-      const nameIdMatch = rowText.match(/^([A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*)*)\s*:\s*(\d+)$/);
+      // Skip if this row is just a number (LOC amount) - we'll find these automatically
+      if (/^[\d,\s]+\.?\d*$/.test(rowText.trim())) {
+        continue;
+      }
+
+      // Try to parse as "Name Name: ID" format
+      // This regex captures the name part BEFORE the colon
+      const nameIdMatch = rowText.match(/^([A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*)+)\s*:\s*\d+/);
 
       if (nameIdMatch) {
+        // Extract just the name part (before the colon)
         const fullName = nameIdMatch[1].trim();
         const nameParts = fullName.split(/\s+/).filter(w => w.length >= 2);
 
-        // Look for an amount in nearby rows (next row or same selection)
+        // Look for an amount in nearby rows (within next 3 rows)
         let locAmount = 0;
-        for (let i = idx + 1; i < Math.min(idx + 5, pdfRows.length); i++) {
-          const nextRow = pdfRows[i];
-          // Look for amount patterns like "3,300.00" or "1,999.00"
-          const amountMatch = nextRow?.match(/^[\d,]+\.\d{2}$/);
-          if (amountMatch) {
-            locAmount = parseLocAmount(amountMatch[0]);
+        for (let i = idx + 1; i < Math.min(idx + 4, pdfRows.length); i++) {
+          const nextRow = pdfRows[i]?.trim();
+          if (!nextRow) continue;
+
+          // Skip 0.00 rows (VAT percentage)
+          if (nextRow === '0.00') continue;
+
+          // Look for amount patterns like "3,300.00", "3 300.00", "1,999.00", "1999.00"
+          const amountMatch = nextRow.match(/^[\d,\s]+\.\d{2}$/);
+          if (amountMatch && parseLocAmount(nextRow) > 0) {
+            locAmount = parseLocAmount(nextRow);
             break;
           }
         }
 
         if (nameParts.length >= 1) {
           newEmployees.push({
-            description: rowText,
+            description: fullName,
             firstName: nameParts[0],
             lastName: nameParts.slice(1).join(' '),
             locAmount: noLocPresent ? 0 : locAmount,
@@ -534,33 +547,35 @@ export default function EntityFinder() {
           });
         }
       } else {
-        // Try to parse as just a name (multiple capitalized words)
-        const nameMatch = rowText.match(/^([A-Z][a-z]+(?:\s+[A-Z][a-z'-]+)+)$/);
-        if (nameMatch) {
-          const fullName = nameMatch[1].trim();
-          const nameParts = fullName.split(/\s+/);
+        // Try to parse as just a name (multiple capitalized words, no colon/numbers)
+        // First, strip any trailing colon and numbers
+        let cleanedText = rowText.replace(/\s*:\s*\d+.*$/, '').trim();
 
-          if (nameParts.length >= 2) {
-            newEmployees.push({
-              description: rowText,
-              firstName: nameParts[0],
-              lastName: nameParts.slice(1).join(' '),
-              locAmount: 0,
-              raw: rowText
-            });
+        // Get only the letter words
+        const words = cleanedText.split(/\s+/).filter(w => /^[A-Za-z'-]+$/.test(w) && w.length >= 2);
+
+        if (words.length >= 2) {
+          // Look for an amount in nearby rows
+          let locAmount = 0;
+          for (let i = idx + 1; i < Math.min(idx + 4, pdfRows.length); i++) {
+            const nextRow = pdfRows[i]?.trim();
+            if (!nextRow) continue;
+            if (nextRow === '0.00') continue;
+
+            const amountMatch = nextRow.match(/^[\d,\s]+\.\d{2}$/);
+            if (amountMatch && parseLocAmount(nextRow) > 0) {
+              locAmount = parseLocAmount(nextRow);
+              break;
+            }
           }
-        } else {
-          // Just try to split on spaces and use first word as first name
-          const words = rowText.split(/\s+/).filter(w => /^[A-Za-z'-]+$/.test(w) && w.length >= 2);
-          if (words.length >= 2) {
-            newEmployees.push({
-              description: rowText,
-              firstName: words[0],
-              lastName: words.slice(1).join(' '),
-              locAmount: 0,
-              raw: rowText
-            });
-          }
+
+          newEmployees.push({
+            description: words.join(' '),
+            firstName: words[0],
+            lastName: words.slice(1).join(' '),
+            locAmount: noLocPresent ? 0 : locAmount,
+            raw: rowText
+          });
         }
       }
     }
@@ -577,7 +592,7 @@ export default function EntityFinder() {
       setPdfRows([]);
       setSelectedPdfRows(new Set());
     } else {
-      setInvoiceError('Could not parse any employee data from selected rows');
+      setInvoiceError('Could not parse any employee data from selected rows. Please select rows containing employee names.');
     }
   };
 
@@ -1162,8 +1177,8 @@ export default function EntityFinder() {
               }}>
                 <h4 style={{ fontSize: '0.875rem', marginBottom: '0.5rem' }}>Select Employee Rows from PDF</h4>
                 <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
-                  Click the rows that contain employee names (e.g., "Callum Witney Mills: 1556708").
-                  The system will automatically look for associated LOC amounts nearby.
+                  Only select the rows with employee names (e.g., "Callum Witney Mills: 1556708").
+                  <strong> Do NOT select the amount rows</strong> - LOC amounts will be found automatically.
                 </p>
 
                 {/* No LOC checkbox */}
@@ -1195,9 +1210,12 @@ export default function EntityFinder() {
                 }}>
                   {pdfRows.map((row, idx) => {
                     const isSelected = selectedPdfRows.has(idx);
-                    // Highlight rows that look like employee names
-                    const looksLikeEmployee = /^[A-Z][a-z]+\s+[A-Z]/.test(row) ||
-                      /:\s*\d{5,}/.test(row);
+                    // Check if this is just a number (amount row)
+                    const isAmountRow = /^[\d,\s]+\.?\d*$/.test(row.trim());
+                    // Highlight rows that look like employee names (have Name: ID pattern)
+                    const looksLikeEmployee = !isAmountRow && (
+                      /^[A-Z][a-z]+\s+[A-Z][a-z]+.*:\s*\d{5,}/.test(row)
+                    );
 
                     return (
                       <div
@@ -1236,7 +1254,16 @@ export default function EntityFinder() {
                             color: 'var(--success)',
                             marginLeft: 'auto'
                           }}>
-                            likely employee
+                            employee
+                          </span>
+                        )}
+                        {isAmountRow && (
+                          <span style={{
+                            fontSize: '0.65rem',
+                            color: 'var(--text-muted)',
+                            marginLeft: 'auto'
+                          }}>
+                            (amount - auto-detected)
                           </span>
                         )}
                       </div>
