@@ -33,6 +33,11 @@ export default function EntityFinder() {
   // No LOC option
   const [noLocPresent, setNoLocPresent] = useState(false);
 
+  // PDF row selection mode
+  const [pdfRows, setPdfRows] = useState([]);
+  const [selectedPdfRows, setSelectedPdfRows] = useState(new Set());
+  const [showPdfRowSelector, setShowPdfRowSelector] = useState(false);
+
   // Batch file search
   const [batchFiles, setBatchFiles] = useState([]);
   const [selectedFileIndex, setSelectedFileIndex] = useState(-1);
@@ -127,7 +132,7 @@ export default function EntityFinder() {
 
   /**
    * Extract employees from text-based PDF content
-   * Looks for patterns like: "Name Name: 1234567 0.00 3,300.00"
+   * Looks for patterns like: "Name Name: 1234567" followed by amounts
    * Format: Name(s): ID VAT% LOC_Amount
    */
   const extractEmployeesFromText = (rawRows) => {
@@ -141,13 +146,6 @@ export default function EntityFinder() {
       const rowText = row.map(cell => String(cell || '').trim()).join(' ').trim();
       if (rowText) {
         allText.push(rowText);
-      }
-      // Also add individual cells as separate entries
-      for (const cell of row) {
-        const cellText = String(cell || '').trim();
-        if (cellText) {
-          allText.push(cellText);
-        }
       }
     }
 
@@ -199,6 +197,51 @@ export default function EntityFinder() {
   };
 
   /**
+   * Parse a single text row into employee data
+   * Handles formats like: "Callum Witney Mills: 1556708" with nearby amount
+   */
+  const parseEmployeeFromRow = (rowText, amountText = '') => {
+    if (!rowText) return null;
+
+    // Pattern 1: "Name Name: ID" format
+    const nameIdPattern = /^([A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*)*)\s*:\s*(\d+)$/;
+    let match = rowText.match(nameIdPattern);
+
+    if (match) {
+      const fullName = match[1].trim();
+      const nameParts = fullName.split(/\s+/).filter(w => w.length >= 2);
+      if (nameParts.length >= 1) {
+        return {
+          firstName: nameParts[0],
+          lastName: nameParts.slice(1).join(' '),
+          employeeId: match[2],
+          locAmount: parseLocAmount(amountText),
+          raw: rowText
+        };
+      }
+    }
+
+    // Pattern 2: Just names (at least 2 words starting with capitals)
+    const nameOnlyPattern = /^([A-Z][a-z]+(?:\s+[A-Z][a-z'-]+)+)$/;
+    match = rowText.match(nameOnlyPattern);
+
+    if (match) {
+      const fullName = match[1].trim();
+      const nameParts = fullName.split(/\s+/);
+      if (nameParts.length >= 2) {
+        return {
+          firstName: nameParts[0],
+          lastName: nameParts.slice(1).join(' '),
+          locAmount: parseLocAmount(amountText),
+          raw: rowText
+        };
+      }
+    }
+
+    return null;
+  };
+
+  /**
    * Parse LOC amount from string
    */
   const parseLocAmount = (value) => {
@@ -245,25 +288,26 @@ export default function EntityFinder() {
         }
 
         if (extractedEmployees.length === 0) {
-          // Show manual column config if auto-extract fails
-          setInvoiceRawRows(result.rawRows);
-          const columns = result.rawRows[0]?.map((h, idx) =>
-            String(h || '').trim() || `Column ${idx + 1}`
-          ) || [];
-          setInvoiceColumns(columns);
-
-          const detected = autoDetectInvoiceColumns(columns);
-          setInvoiceDescCol(detected.descCol);
-          setInvoiceNetPriceCol(detected.netPriceCol);
-          setInvoiceFirstNameCol(detected.firstNameCol);
-          setInvoiceLastNameCol(detected.lastNameCol);
-          setInvoiceLocCol(detected.locCol);
-          setShowInvoiceConfig(true);
-          setInvoiceError('Could not auto-extract employees. Please configure columns manually.');
+          // Show PDF row selector - let user pick which rows are employees
+          // Flatten raw rows into displayable text items
+          const flatRows = [];
+          for (const row of result.rawRows) {
+            if (!row) continue;
+            const rowText = row.map(cell => String(cell || '').trim()).join(' ').trim();
+            if (rowText && rowText.length > 2) {
+              flatRows.push(rowText);
+            }
+          }
+          setPdfRows(flatRows);
+          setSelectedPdfRows(new Set());
+          setShowPdfRowSelector(true);
+          setShowInvoiceConfig(false);
+          setInvoiceError('');
         } else {
           setEmployees(extractedEmployees);
           setSelectedEmployees(new Set(extractedEmployees.map((_, i) => i)));
           setShowInvoiceConfig(false);
+          setShowPdfRowSelector(false);
         }
       } else {
         // For Excel/CSV, always show column config
@@ -445,6 +489,111 @@ export default function EntityFinder() {
     setSelectedEmployees(new Set(employees.map((_, i) => i)));
     setShowInvoiceConfig(false);
     setInvoiceError('');
+  };
+
+  /**
+   * Process selected PDF rows into employees
+   * Tries to pair name rows with amount rows
+   */
+  const handleProcessPdfRows = () => {
+    if (selectedPdfRows.size === 0) return;
+
+    const newEmployees = [];
+    const selectedIndices = Array.from(selectedPdfRows).sort((a, b) => a - b);
+
+    for (const idx of selectedIndices) {
+      const rowText = pdfRows[idx];
+      if (!rowText) continue;
+
+      // Try to parse as "Name: ID" format first
+      const nameIdMatch = rowText.match(/^([A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*)*)\s*:\s*(\d+)$/);
+
+      if (nameIdMatch) {
+        const fullName = nameIdMatch[1].trim();
+        const nameParts = fullName.split(/\s+/).filter(w => w.length >= 2);
+
+        // Look for an amount in nearby rows (next row or same selection)
+        let locAmount = 0;
+        for (let i = idx + 1; i < Math.min(idx + 5, pdfRows.length); i++) {
+          const nextRow = pdfRows[i];
+          // Look for amount patterns like "3,300.00" or "1,999.00"
+          const amountMatch = nextRow?.match(/^[\d,]+\.\d{2}$/);
+          if (amountMatch) {
+            locAmount = parseLocAmount(amountMatch[0]);
+            break;
+          }
+        }
+
+        if (nameParts.length >= 1) {
+          newEmployees.push({
+            description: rowText,
+            firstName: nameParts[0],
+            lastName: nameParts.slice(1).join(' '),
+            locAmount: noLocPresent ? 0 : locAmount,
+            raw: rowText
+          });
+        }
+      } else {
+        // Try to parse as just a name (multiple capitalized words)
+        const nameMatch = rowText.match(/^([A-Z][a-z]+(?:\s+[A-Z][a-z'-]+)+)$/);
+        if (nameMatch) {
+          const fullName = nameMatch[1].trim();
+          const nameParts = fullName.split(/\s+/);
+
+          if (nameParts.length >= 2) {
+            newEmployees.push({
+              description: rowText,
+              firstName: nameParts[0],
+              lastName: nameParts.slice(1).join(' '),
+              locAmount: 0,
+              raw: rowText
+            });
+          }
+        } else {
+          // Just try to split on spaces and use first word as first name
+          const words = rowText.split(/\s+/).filter(w => /^[A-Za-z'-]+$/.test(w) && w.length >= 2);
+          if (words.length >= 2) {
+            newEmployees.push({
+              description: rowText,
+              firstName: words[0],
+              lastName: words.slice(1).join(' '),
+              locAmount: 0,
+              raw: rowText
+            });
+          }
+        }
+      }
+    }
+
+    if (newEmployees.length > 0) {
+      setEmployees(prev => [...prev, ...newEmployees]);
+      setSelectedEmployees(prev => {
+        const newSet = new Set(prev);
+        const startIdx = employees.length;
+        newEmployees.forEach((_, i) => newSet.add(startIdx + i));
+        return newSet;
+      });
+      setShowPdfRowSelector(false);
+      setPdfRows([]);
+      setSelectedPdfRows(new Set());
+    } else {
+      setInvoiceError('Could not parse any employee data from selected rows');
+    }
+  };
+
+  /**
+   * Toggle PDF row selection
+   */
+  const togglePdfRowSelection = (idx) => {
+    setSelectedPdfRows(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(idx)) {
+        newSet.delete(idx);
+      } else {
+        newSet.add(idx);
+      }
+      return newSet;
+    });
   };
 
   /**
@@ -720,6 +869,9 @@ export default function EntityFinder() {
     setShowInvoiceConfig(false);
     setNoLocPresent(false);
     setMatchWithoutLoc(false);
+    setPdfRows([]);
+    setSelectedPdfRows(new Set());
+    setShowPdfRowSelector(false);
   };
 
   /**
@@ -997,6 +1149,121 @@ export default function EntityFinder() {
                 >
                   Extract Employees
                 </button>
+              </div>
+            )}
+
+            {/* PDF Row Selector */}
+            {showPdfRowSelector && pdfRows.length > 0 && (
+              <div style={{
+                background: 'var(--bg)',
+                padding: '1rem',
+                borderRadius: '0.5rem',
+                marginBottom: '1rem'
+              }}>
+                <h4 style={{ fontSize: '0.875rem', marginBottom: '0.5rem' }}>Select Employee Rows from PDF</h4>
+                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
+                  Click the rows that contain employee names (e.g., "Callum Witney Mills: 1556708").
+                  The system will automatically look for associated LOC amounts nearby.
+                </p>
+
+                {/* No LOC checkbox */}
+                <label style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  cursor: 'pointer',
+                  fontSize: '0.875rem',
+                  padding: '0.5rem',
+                  background: noLocPresent ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
+                  borderRadius: '0.25rem',
+                  marginBottom: '0.75rem'
+                }}>
+                  <input
+                    type="checkbox"
+                    checked={noLocPresent}
+                    onChange={(e) => setNoLocPresent(e.target.checked)}
+                  />
+                  No LOC Value Present (match by name only)
+                </label>
+
+                <div style={{
+                  maxHeight: '300px',
+                  overflow: 'auto',
+                  border: '1px solid var(--border)',
+                  borderRadius: '0.375rem',
+                  marginBottom: '0.75rem'
+                }}>
+                  {pdfRows.map((row, idx) => {
+                    const isSelected = selectedPdfRows.has(idx);
+                    // Highlight rows that look like employee names
+                    const looksLikeEmployee = /^[A-Z][a-z]+\s+[A-Z]/.test(row) ||
+                      /:\s*\d{5,}/.test(row);
+
+                    return (
+                      <div
+                        key={idx}
+                        onClick={() => togglePdfRowSelection(idx)}
+                        style={{
+                          padding: '0.5rem 0.75rem',
+                          borderBottom: '1px solid var(--border)',
+                          cursor: 'pointer',
+                          fontSize: '0.8rem',
+                          background: isSelected
+                            ? 'rgba(59, 130, 246, 0.2)'
+                            : looksLikeEmployee
+                              ? 'rgba(22, 163, 74, 0.05)'
+                              : 'transparent',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.5rem'
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => {}}
+                          style={{ pointerEvents: 'none' }}
+                        />
+                        <span style={{
+                          color: looksLikeEmployee ? 'var(--text)' : 'var(--text-muted)',
+                          fontWeight: looksLikeEmployee ? '500' : 'normal'
+                        }}>
+                          {row}
+                        </span>
+                        {looksLikeEmployee && (
+                          <span style={{
+                            fontSize: '0.65rem',
+                            color: 'var(--success)',
+                            marginLeft: 'auto'
+                          }}>
+                            likely employee
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button
+                    className="btn btn-primary"
+                    onClick={handleProcessPdfRows}
+                    disabled={selectedPdfRows.size === 0}
+                    style={{ flex: 1 }}
+                  >
+                    Add {selectedPdfRows.size} Selected Row(s) as Employees
+                  </button>
+                  <button
+                    className="btn btn-secondary"
+                    onClick={() => {
+                      setShowPdfRowSelector(false);
+                      setPdfRows([]);
+                      setSelectedPdfRows(new Set());
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
             )}
 
