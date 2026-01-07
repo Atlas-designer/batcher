@@ -34,6 +34,433 @@ const STEPS = {
   PREVIEW: 'preview'
 };
 
+// Manual Batch Mode Component
+function ManualBatchMode() {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [employees, setEmployees] = useState([]);
+  const [form, setForm] = useState({
+    firstName: '',
+    surname: '',
+    locAmount: '',
+    email: '',
+    additionalDetails: ''
+  });
+  const [pasteError, setPasteError] = useState('');
+
+  const handleInputChange = (field, value) => {
+    setForm(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleAddEmployee = () => {
+    if (!form.firstName.trim() || !form.surname.trim() || !form.locAmount.trim()) {
+      return; // Required fields
+    }
+    setEmployees(prev => [...prev, { ...form, id: Date.now() }]);
+    setForm({
+      firstName: '',
+      surname: '',
+      locAmount: '',
+      email: '',
+      additionalDetails: ''
+    });
+  };
+
+  const handleRemoveEmployee = (id) => {
+    setEmployees(prev => prev.filter(emp => emp.id !== id));
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleAddEmployee();
+    }
+  };
+
+  // Parse pasted data from Excel/CSV
+  const handlePaste = (e) => {
+    const pastedText = e.clipboardData.getData('text');
+    if (!pastedText.trim()) return;
+
+    setPasteError('');
+    const lines = pastedText.split(/\r?\n/).filter(line => line.trim());
+    const newEmployees = [];
+    const errors = [];
+
+    lines.forEach((line, idx) => {
+      // Try tab-separated first (Excel), then comma-separated (CSV)
+      let parts = line.split('\t');
+      if (parts.length < 3) {
+        parts = line.split(',').map(p => p.trim());
+      }
+
+      if (parts.length >= 3) {
+        const firstName = parts[0]?.trim() || '';
+        const surname = parts[1]?.trim() || '';
+        const locAmount = parts[2]?.trim().replace(/[£$€,]/g, '') || '';
+        const email = parts[3]?.trim() || '';
+        const additionalDetails = parts[4]?.trim() || '';
+
+        if (firstName && surname && locAmount) {
+          newEmployees.push({
+            id: Date.now() + idx,
+            firstName,
+            surname,
+            locAmount,
+            email,
+            additionalDetails
+          });
+        } else {
+          errors.push(`Row ${idx + 1}: Missing required data`);
+        }
+      } else {
+        errors.push(`Row ${idx + 1}: Not enough columns (need at least First Name, Surname, LOC Amount)`);
+      }
+    });
+
+    if (newEmployees.length > 0) {
+      setEmployees(prev => [...prev, ...newEmployees]);
+    }
+
+    if (errors.length > 0) {
+      setPasteError(`Some rows could not be imported:\n${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...and ${errors.length - 3} more` : ''}`);
+    }
+  };
+
+  // Clean LOC Amount for output
+  const cleanLOCAmount = (value) => {
+    const cleaned = String(value).replace(/[£$€,]/g, '').trim();
+    const num = parseFloat(cleaned);
+    return isNaN(num) ? '' : num.toFixed(2);
+  };
+
+  // Sanitize string
+  const sanitizeString = (value) => {
+    if (!value) return '';
+    return String(value).replace(/[,'"'`]/g, '').replace(/\s+/g, ' ').trim();
+  };
+
+  // Generate and download batch file
+  const handleDownload = () => {
+    if (employees.length === 0) return;
+
+    // Build output data matching OUTPUT_COLUMNS format
+    const outputData = employees.map(emp => ({
+      'Firstname': sanitizeString(emp.firstName),
+      'Surname': sanitizeString(emp.surname),
+      'Street1': '',
+      'Street2': '',
+      'City': '',
+      'County': '',
+      'Postcode': '',
+      'Country': 'UK',
+      'LOC Amount': cleanLOCAmount(emp.locAmount),
+      'Email': sanitizeString(emp.email),
+      'Pay Frequency': 'Monthly',
+      'Additional Details': sanitizeString(emp.additionalDetails),
+      'Date of Approval': ''
+    }));
+
+    // Generate CSV
+    const headers = ['Firstname', 'Surname', 'Street1', 'Street2', 'City', 'County', 'Postcode', 'Country', 'LOC Amount', 'Email', 'Pay Frequency', 'Additional Details', 'Date of Approval'];
+    const escapeCSV = (val) => {
+      const str = String(val || '');
+      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+
+    const csvLines = [
+      headers.join(','),
+      ...outputData.map(row => headers.map(h => escapeCSV(row[h])).join(','))
+    ];
+    const csvContent = csvLines.join('\r\n') + '\r\n';
+
+    // Download
+    const now = new Date();
+    const day = String(now.getDate()).padStart(2, '0');
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const year = String(now.getFullYear()).slice(-2);
+    const filename = `Manual_Batch_${day}.${month}.${year}.csv`;
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', filename);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleClearAll = () => {
+    setEmployees([]);
+    setPasteError('');
+  };
+
+  return (
+    <div className="card" style={{ marginTop: '1rem' }}>
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        style={{
+          background: 'none',
+          border: 'none',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+          width: '100%',
+          padding: '0.5rem 0',
+          fontSize: '1rem',
+          fontWeight: '500',
+          color: 'var(--text)'
+        }}
+      >
+        <span style={{ transition: 'transform 0.2s', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>
+          ▶
+        </span>
+        Manual Batch Mode
+        {employees.length > 0 && (
+          <span style={{
+            background: 'var(--primary)',
+            color: 'white',
+            borderRadius: '50%',
+            width: '1.5rem',
+            height: '1.5rem',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '0.75rem'
+          }}>
+            {employees.length}
+          </span>
+        )}
+      </button>
+
+      {isExpanded && (
+        <div style={{ marginTop: '1rem' }}>
+          {/* Input Form */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+            gap: '0.75rem',
+            marginBottom: '1rem'
+          }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                First Name *
+              </label>
+              <input
+                type="text"
+                value={form.firstName}
+                onChange={(e) => handleInputChange('firstName', e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="John"
+                style={{
+                  width: '100%',
+                  padding: '0.5rem',
+                  border: '1px solid var(--border)',
+                  borderRadius: '0.375rem',
+                  fontSize: '0.875rem'
+                }}
+              />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                Surname *
+              </label>
+              <input
+                type="text"
+                value={form.surname}
+                onChange={(e) => handleInputChange('surname', e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Smith"
+                style={{
+                  width: '100%',
+                  padding: '0.5rem',
+                  border: '1px solid var(--border)',
+                  borderRadius: '0.375rem',
+                  fontSize: '0.875rem'
+                }}
+              />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                LOC Amount *
+              </label>
+              <input
+                type="text"
+                value={form.locAmount}
+                onChange={(e) => handleInputChange('locAmount', e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="1000.00"
+                style={{
+                  width: '100%',
+                  padding: '0.5rem',
+                  border: '1px solid var(--border)',
+                  borderRadius: '0.375rem',
+                  fontSize: '0.875rem'
+                }}
+              />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                Email
+              </label>
+              <input
+                type="email"
+                value={form.email}
+                onChange={(e) => handleInputChange('email', e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="john@example.com"
+                style={{
+                  width: '100%',
+                  padding: '0.5rem',
+                  border: '1px solid var(--border)',
+                  borderRadius: '0.375rem',
+                  fontSize: '0.875rem'
+                }}
+              />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                Additional Details
+              </label>
+              <input
+                type="text"
+                value={form.additionalDetails}
+                onChange={(e) => handleInputChange('additionalDetails', e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Optional notes"
+                style={{
+                  width: '100%',
+                  padding: '0.5rem',
+                  border: '1px solid var(--border)',
+                  borderRadius: '0.375rem',
+                  fontSize: '0.875rem'
+                }}
+              />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+              <button
+                className="btn btn-primary"
+                onClick={handleAddEmployee}
+                disabled={!form.firstName.trim() || !form.surname.trim() || !form.locAmount.trim()}
+                style={{ width: '100%' }}
+              >
+                Add Employee
+              </button>
+            </div>
+          </div>
+
+          {/* Paste Area */}
+          <div style={{ marginBottom: '1rem' }}>
+            <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+              Paste from Excel/CSV (First Name, Surname, LOC Amount, Email, Additional Details)
+            </label>
+            <textarea
+              onPaste={handlePaste}
+              placeholder="Paste data here... (Tab or comma separated)&#10;John	Smith	1000.00	john@example.com&#10;Jane	Doe	1500.00	jane@example.com"
+              style={{
+                width: '100%',
+                minHeight: '80px',
+                padding: '0.5rem',
+                border: '1px solid var(--border)',
+                borderRadius: '0.375rem',
+                fontSize: '0.875rem',
+                resize: 'vertical',
+                fontFamily: 'monospace'
+              }}
+            />
+            {pasteError && (
+              <p style={{ color: 'var(--error)', fontSize: '0.75rem', marginTop: '0.25rem', whiteSpace: 'pre-line' }}>
+                {pasteError}
+              </p>
+            )}
+          </div>
+
+          {/* Employee List */}
+          {employees.length > 0 && (
+            <div style={{ marginBottom: '1rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                <h4 style={{ margin: 0 }}>Employees ({employees.length})</h4>
+                <button
+                  className="btn btn-secondary"
+                  onClick={handleClearAll}
+                  style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}
+                >
+                  Clear All
+                </button>
+              </div>
+              <div style={{
+                maxHeight: '300px',
+                overflow: 'auto',
+                border: '1px solid var(--border)',
+                borderRadius: '0.375rem'
+              }}>
+                <table className="data-table" style={{ margin: 0 }}>
+                  <thead>
+                    <tr>
+                      <th>First Name</th>
+                      <th>Surname</th>
+                      <th>LOC Amount</th>
+                      <th>Email</th>
+                      <th>Additional Details</th>
+                      <th style={{ width: '60px' }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {employees.map((emp) => (
+                      <tr key={emp.id}>
+                        <td>{emp.firstName}</td>
+                        <td>{emp.surname}</td>
+                        <td>{emp.locAmount}</td>
+                        <td>{emp.email || '-'}</td>
+                        <td>{emp.additionalDetails || '-'}</td>
+                        <td>
+                          <button
+                            onClick={() => handleRemoveEmployee(emp.id)}
+                            style={{
+                              background: 'var(--error)',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '0.25rem',
+                              padding: '0.25rem 0.5rem',
+                              cursor: 'pointer',
+                              fontSize: '0.75rem'
+                            }}
+                          >
+                            Remove
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Download Button */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <button
+              className="btn btn-primary"
+              onClick={handleDownload}
+              disabled={employees.length === 0}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+            >
+              <span>Download Batch File</span>
+              {employees.length > 0 && <span>({employees.length} employees)</span>}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function App() {
   // Auth state
   const [authenticated, setAuthenticated] = useState(isAuthenticated());
@@ -643,7 +1070,10 @@ export default function App() {
 
             {/* Step Content */}
             {currentStep === STEPS.UPLOAD && (
-              <FileUploader onFileSelect={handleFileSelect} onCombineFiles={handleCombineFiles} disabled={loading} />
+              <>
+                <FileUploader onFileSelect={handleFileSelect} onCombineFiles={handleCombineFiles} disabled={loading} />
+                <ManualBatchMode />
+              </>
             )}
 
             {currentStep === STEPS.CONFIGURE && rawRows && (
