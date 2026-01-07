@@ -38,6 +38,7 @@ const STEPS = {
 function ManualBatchMode() {
   const [isExpanded, setIsExpanded] = useState(false);
   const [employees, setEmployees] = useState([]);
+  const [outputFilename, setOutputFilename] = useState('Manual_Batch');
   const [form, setForm] = useState({
     firstName: '',
     surname: '',
@@ -76,7 +77,24 @@ function ManualBatchMode() {
     }
   };
 
-  // Parse pasted data from Excel/CSV
+  // Check if a value looks like an email
+  const isEmail = (val) => {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
+  };
+
+  // Check if a value looks like a LOC amount (number, possibly with currency symbols)
+  const isLOCAmount = (val) => {
+    const cleaned = String(val).replace(/[£$€,\s]/g, '');
+    const num = parseFloat(cleaned);
+    return !isNaN(num) && num > 0 && num < 100000; // Reasonable LOC range
+  };
+
+  // Check if a value looks like a name (letters, possibly hyphens/apostrophes)
+  const isName = (val) => {
+    return /^[A-Za-z][A-Za-z'-]*$/.test(val) && val.length >= 2;
+  };
+
+  // Parse pasted data from Excel/CSV - smart detection
   const handlePaste = (e) => {
     const pastedText = e.clipboardData.getData('text');
     if (!pastedText.trim()) return;
@@ -86,43 +104,93 @@ function ManualBatchMode() {
     const newEmployees = [];
     const errors = [];
 
-    lines.forEach((line, idx) => {
+    // Check if first line looks like headers
+    let startIdx = 0;
+    const firstLine = lines[0]?.toLowerCase() || '';
+    if (firstLine.includes('firstname') || firstLine.includes('first name') ||
+        firstLine.includes('surname') || firstLine.includes('email') ||
+        firstLine.includes('loc') || firstLine.includes('amount')) {
+      startIdx = 1; // Skip header row
+    }
+
+    for (let idx = startIdx; idx < lines.length; idx++) {
+      const line = lines[idx];
       // Try tab-separated first (Excel), then comma-separated (CSV)
-      let parts = line.split('\t');
-      if (parts.length < 3) {
+      let parts = line.split('\t').map(p => p.trim());
+      if (parts.length < 2) {
         parts = line.split(',').map(p => p.trim());
       }
 
-      if (parts.length >= 3) {
-        const firstName = parts[0]?.trim() || '';
-        const surname = parts[1]?.trim() || '';
-        const locAmount = parts[2]?.trim().replace(/[£$€,]/g, '') || '';
-        const email = parts[3]?.trim() || '';
-        const additionalDetails = parts[4]?.trim() || '';
+      // Smart detection: find firstName, surname, email, LOC amount from any column order
+      let firstName = '';
+      let surname = '';
+      let email = '';
+      let locAmount = '';
+      const foundNames = [];
 
-        if (firstName && surname && locAmount) {
-          newEmployees.push({
-            id: Date.now() + idx,
-            firstName,
-            surname,
-            locAmount,
-            email,
-            additionalDetails
-          });
-        } else {
-          errors.push(`Row ${idx + 1}: Missing required data`);
+      for (const part of parts) {
+        if (!part) continue;
+
+        if (!email && isEmail(part)) {
+          email = part;
+        } else if (!locAmount && isLOCAmount(part)) {
+          locAmount = String(part).replace(/[£$€,]/g, '');
+        } else if (isName(part) && foundNames.length < 2) {
+          foundNames.push(part);
         }
-      } else {
-        errors.push(`Row ${idx + 1}: Not enough columns (need at least First Name, Surname, LOC Amount)`);
       }
-    });
+
+      // Assign names
+      if (foundNames.length >= 2) {
+        firstName = foundNames[0];
+        surname = foundNames[1];
+      } else if (foundNames.length === 1) {
+        // Only one name found - might be in "First Last" format in one cell
+        // Check if any part contains a space and has multiple words
+        for (const part of parts) {
+          if (part && part.includes(' ')) {
+            const words = part.split(/\s+/).filter(w => isName(w));
+            if (words.length >= 2) {
+              firstName = words[0];
+              surname = words.slice(1).join(' ');
+              break;
+            }
+          }
+        }
+        // If still not found, use the single name as first name
+        if (!firstName) {
+          firstName = foundNames[0];
+        }
+      }
+
+      if (firstName && locAmount) {
+        newEmployees.push({
+          id: Date.now() + idx,
+          firstName,
+          surname: surname || '',
+          locAmount,
+          email: email || '',
+          additionalDetails: ''
+        });
+      } else {
+        // Only show error if we found some data but not enough
+        if (parts.length > 1) {
+          const missing = [];
+          if (!firstName) missing.push('name');
+          if (!locAmount) missing.push('LOC amount');
+          errors.push(`Row ${idx + 1 - startIdx}: Could not find ${missing.join(' or ')}`);
+        }
+      }
+    }
 
     if (newEmployees.length > 0) {
       setEmployees(prev => [...prev, ...newEmployees]);
     }
 
-    if (errors.length > 0) {
-      setPasteError(`Some rows could not be imported:\n${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...and ${errors.length - 3} more` : ''}`);
+    if (errors.length > 0 && newEmployees.length === 0) {
+      setPasteError(`Could not import data:\n${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...and ${errors.length - 3} more` : ''}`);
+    } else if (errors.length > 0) {
+      setPasteError(`Imported ${newEmployees.length} rows. Some rows skipped:\n${errors.slice(0, 2).join('\n')}${errors.length > 2 ? `\n...and ${errors.length - 2} more` : ''}`);
     }
   };
 
@@ -176,12 +244,13 @@ function ManualBatchMode() {
     ];
     const csvContent = csvLines.join('\r\n') + '\r\n';
 
-    // Download
+    // Download with custom filename
     const now = new Date();
     const day = String(now.getDate()).padStart(2, '0');
     const month = String(now.getMonth() + 1).padStart(2, '0');
     const year = String(now.getFullYear()).slice(-2);
-    const filename = `Manual_Batch_${day}.${month}.${year}.csv`;
+    const baseName = outputFilename.trim() || 'Manual_Batch';
+    const filename = `${baseName} ${day}.${month}.${year}.csv`;
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -443,8 +512,37 @@ function ManualBatchMode() {
             </div>
           )}
 
-          {/* Download Button */}
-          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          {/* Output Filename & Download */}
+          <div style={{
+            display: 'flex',
+            gap: '1rem',
+            alignItems: 'flex-end',
+            flexWrap: 'wrap',
+            justifyContent: 'space-between'
+          }}>
+            <div style={{ flex: '1', minWidth: '200px', maxWidth: '300px' }}>
+              <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                Output Filename
+              </label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                <input
+                  type="text"
+                  value={outputFilename}
+                  onChange={(e) => setOutputFilename(e.target.value)}
+                  placeholder="Manual_Batch"
+                  style={{
+                    flex: 1,
+                    padding: '0.5rem',
+                    border: '1px solid var(--border)',
+                    borderRadius: '0.375rem',
+                    fontSize: '0.875rem'
+                  }}
+                />
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
+                  .csv
+                </span>
+              </div>
+            </div>
             <button
               className="btn btn-primary"
               onClick={handleDownload}
