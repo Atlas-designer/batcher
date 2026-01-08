@@ -7,7 +7,6 @@ import ProcessEditor from './components/ProcessEditor';
 import OutputPreview from './components/OutputPreview';
 import ProcessManager from './components/ProcessManager';
 import ImportDialog from './components/ImportDialog';
-import PasswordDialog from './components/PasswordDialog';
 import AdminAdam from './components/AdminAdam';
 import EntityFinder from './components/EntityFinder';
 import { parseFile, parseAndCombinePDFs } from './utils/fileParser';
@@ -20,10 +19,7 @@ import {
   updateProcess,
   deleteProcess,
   findProcessByCompany,
-  linkCompanyToProcess,
-  getPasswordsForCompany,
-  savePasswordForCompany,
-  getTempPasswords
+  linkCompanyToProcess
 } from './services/processStore';
 
 // App steps
@@ -39,6 +35,8 @@ function ManualBatchMode() {
   const [isExpanded, setIsExpanded] = useState(false);
   const [employees, setEmployees] = useState([]);
   const [outputFilename, setOutputFilename] = useState('Manual_Batch');
+  const [applyToAllField, setApplyToAllField] = useState('email');
+  const [applyToAllValue, setApplyToAllValue] = useState('');
   const [form, setForm] = useState({
     firstName: '',
     surname: '',
@@ -68,6 +66,21 @@ function ManualBatchMode() {
 
   const handleRemoveEmployee = (id) => {
     setEmployees(prev => prev.filter(emp => emp.id !== id));
+  };
+
+  const handleUpdateEmployee = (id, field, value) => {
+    setEmployees(prev => prev.map(emp =>
+      emp.id === id ? { ...emp, [field]: value } : emp
+    ));
+  };
+
+  const handleApplyToAll = () => {
+    if (!applyToAllValue.trim()) return;
+    setEmployees(prev => prev.map(emp => ({
+      ...emp,
+      [applyToAllField]: applyToAllValue
+    })));
+    setApplyToAllValue('');
   };
 
   const handleKeyDown = (e) => {
@@ -464,7 +477,7 @@ function ManualBatchMode() {
                 </button>
               </div>
               <div style={{
-                maxHeight: '300px',
+                maxHeight: '400px',
                 overflow: 'auto',
                 border: '1px solid var(--border)',
                 borderRadius: '0.375rem'
@@ -483,11 +496,93 @@ function ManualBatchMode() {
                   <tbody>
                     {employees.map((emp) => (
                       <tr key={emp.id}>
-                        <td>{emp.firstName}</td>
-                        <td>{emp.surname}</td>
-                        <td>{emp.locAmount}</td>
-                        <td>{emp.email || '-'}</td>
-                        <td>{emp.additionalDetails || '-'}</td>
+                        <td>
+                          <input
+                            type="text"
+                            value={emp.firstName}
+                            onChange={(e) => handleUpdateEmployee(emp.id, 'firstName', e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '0.25rem',
+                              border: '1px solid transparent',
+                              borderRadius: '0.25rem',
+                              fontSize: '0.8rem',
+                              background: 'transparent'
+                            }}
+                            onFocus={(e) => e.target.style.borderColor = 'var(--border)'}
+                            onBlur={(e) => e.target.style.borderColor = 'transparent'}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="text"
+                            value={emp.surname}
+                            onChange={(e) => handleUpdateEmployee(emp.id, 'surname', e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '0.25rem',
+                              border: '1px solid transparent',
+                              borderRadius: '0.25rem',
+                              fontSize: '0.8rem',
+                              background: 'transparent'
+                            }}
+                            onFocus={(e) => e.target.style.borderColor = 'var(--border)'}
+                            onBlur={(e) => e.target.style.borderColor = 'transparent'}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="text"
+                            value={emp.locAmount}
+                            onChange={(e) => handleUpdateEmployee(emp.id, 'locAmount', e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '0.25rem',
+                              border: '1px solid transparent',
+                              borderRadius: '0.25rem',
+                              fontSize: '0.8rem',
+                              background: 'transparent'
+                            }}
+                            onFocus={(e) => e.target.style.borderColor = 'var(--border)'}
+                            onBlur={(e) => e.target.style.borderColor = 'transparent'}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="text"
+                            value={emp.email}
+                            onChange={(e) => handleUpdateEmployee(emp.id, 'email', e.target.value)}
+                            placeholder="-"
+                            style={{
+                              width: '100%',
+                              padding: '0.25rem',
+                              border: '1px solid transparent',
+                              borderRadius: '0.25rem',
+                              fontSize: '0.8rem',
+                              background: 'transparent'
+                            }}
+                            onFocus={(e) => e.target.style.borderColor = 'var(--border)'}
+                            onBlur={(e) => e.target.style.borderColor = 'transparent'}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="text"
+                            value={emp.additionalDetails}
+                            onChange={(e) => handleUpdateEmployee(emp.id, 'additionalDetails', e.target.value)}
+                            placeholder="-"
+                            style={{
+                              width: '100%',
+                              padding: '0.25rem',
+                              border: '1px solid transparent',
+                              borderRadius: '0.25rem',
+                              fontSize: '0.8rem',
+                              background: 'transparent'
+                            }}
+                            onFocus={(e) => e.target.style.borderColor = 'var(--border)'}
+                            onBlur={(e) => e.target.style.borderColor = 'transparent'}
+                          />
+                        </td>
                         <td>
                           <button
                             onClick={() => handleRemoveEmployee(emp.id)}
@@ -508,6 +603,58 @@ function ManualBatchMode() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+
+              {/* Apply to All Section */}
+              <div style={{
+                marginTop: '0.75rem',
+                padding: '0.75rem',
+                background: 'var(--bg)',
+                borderRadius: '0.375rem',
+                border: '1px solid var(--border)'
+              }}>
+                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
+                  Apply value to all employees:
+                </p>
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                  <select
+                    value={applyToAllField}
+                    onChange={(e) => setApplyToAllField(e.target.value)}
+                    style={{
+                      padding: '0.375rem',
+                      border: '1px solid var(--border)',
+                      borderRadius: '0.25rem',
+                      fontSize: '0.8rem'
+                    }}
+                  >
+                    <option value="firstName">First Name</option>
+                    <option value="surname">Surname</option>
+                    <option value="email">Email</option>
+                    <option value="additionalDetails">Additional Details</option>
+                  </select>
+                  <input
+                    type="text"
+                    value={applyToAllValue}
+                    onChange={(e) => setApplyToAllValue(e.target.value)}
+                    placeholder="Enter value..."
+                    style={{
+                      flex: 1,
+                      minWidth: '150px',
+                      padding: '0.375rem',
+                      border: '1px solid var(--border)',
+                      borderRadius: '0.25rem',
+                      fontSize: '0.8rem'
+                    }}
+                  />
+                  <button
+                    className="btn btn-secondary"
+                    onClick={handleApplyToAll}
+                    disabled={!applyToAllValue.trim()}
+                    style={{ fontSize: '0.75rem', padding: '0.375rem 0.75rem' }}
+                  >
+                    Apply to All
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -611,13 +758,6 @@ export default function App() {
   const [fileQueue, setFileQueue] = useState([]);
   const [currentFileIndex, setCurrentFileIndex] = useState(0);
 
-  // Password dialog state
-  const [showPasswordDialog, setShowPasswordDialog] = useState(false);
-  const [pendingPasswordFile, setPendingPasswordFile] = useState(null);
-  const [existingPasswords, setExistingPasswords] = useState([]);
-  const [isModernEncryption, setIsModernEncryption] = useState(false);
-  const [passwordError, setPasswordError] = useState('');
-
   // Load saved processes on mount
   useEffect(() => {
     if (authenticated) {
@@ -655,7 +795,7 @@ export default function App() {
   };
 
   // Process a single file
-  const processFile = async (file, providedPassword = null) => {
+  const processFile = async (file) => {
     setLoading(true);
     setError('');
     setSourceFile(file);
@@ -671,16 +811,8 @@ export default function App() {
       setDetectedCompany(company);
       setDetectedEntity(entity);
 
-      // Get any saved passwords for this company
-      let passwords = providedPassword ? [providedPassword] : [];
-      if (!providedPassword) {
-        const savedPasswords = await getPasswordsForCompany(company);
-        const tempPasswords = getTempPasswords(company);
-        passwords = [...savedPasswords, ...tempPasswords];
-      }
-
-      // Try to parse the file (with passwords if available)
-      const result = await parseFile(file, passwords.length > 0 ? passwords : null);
+      // Try to parse the file
+      const result = await parseFile(file);
       setRawRows(result.rawRows);
 
       // Try to find a matching process early to get saved startRow
@@ -693,93 +825,11 @@ export default function App() {
       // Go to configure step
       setCurrentStep(STEPS.CONFIGURE);
     } catch (err) {
-      // Check if password is required
-      if (err.code === 'PASSWORD_REQUIRED') {
-        // Extract company for password lookup
-        const { company } = extractCompanyAndEntity(file.name);
-        const savedPasswords = await getPasswordsForCompany(company);
-        const tempPasswords = getTempPasswords(company);
-
-        setPendingPasswordFile(file);
-        setExistingPasswords([...savedPasswords, ...tempPasswords]);
-        setIsModernEncryption(err.isModernEncryption || false);
-        setPasswordError('');
-        setShowPasswordDialog(true);
-        setLoading(false);
-        return;
-      }
-
       setError(err.message || 'Failed to parse file');
       console.error('File parsing error:', err);
     }
 
     setLoading(false);
-  };
-
-  // Handle password submission from dialog
-  const handlePasswordSubmit = async ({ password, saveOption }) => {
-    setShowPasswordDialog(false);
-    setPasswordError('');
-
-    if (!pendingPasswordFile) return;
-
-    const file = pendingPasswordFile;
-    const { company } = extractCompanyAndEntity(file.name);
-
-    // Try to parse with the provided password
-    setLoading(true);
-    try {
-      const result = await parseFile(file, password);
-      setRawRows(result.rawRows);
-
-      // Save password if requested
-      if (saveOption !== 'no-save') {
-        await savePasswordForCompany(company, password, saveOption);
-      }
-
-      // Try to find a matching process early to get saved startRow
-      const earlyMatch = await findProcessByCompany(company);
-      if (earlyMatch) {
-        setMatchedProcess(earlyMatch);
-        setSelectedProcessId(earlyMatch.id);
-      }
-
-      setPendingPasswordFile(null);
-      setExistingPasswords([]);
-      setIsModernEncryption(false);
-      setPasswordError('');
-
-      // Go to configure step
-      setCurrentStep(STEPS.CONFIGURE);
-    } catch (err) {
-      if (err.code === 'PASSWORD_REQUIRED') {
-        // Wrong password - show dialog again
-        const savedPasswords = await getPasswordsForCompany(company);
-        const tempPasswords = getTempPasswords(company);
-        setExistingPasswords([...savedPasswords, ...tempPasswords, password]);
-        setIsModernEncryption(err.isModernEncryption || false);
-        setPasswordError(err.isModernEncryption
-          ? 'The password could not decrypt the file. This may be due to modern Excel encryption - see note above.'
-          : 'Incorrect password. Please try again.');
-        setShowPasswordDialog(true);
-      } else {
-        setError(err.message || 'Failed to parse file');
-        setPendingPasswordFile(null);
-        setExistingPasswords([]);
-        setIsModernEncryption(false);
-        setPasswordError('');
-      }
-    }
-    setLoading(false);
-  };
-
-  // Handle password dialog cancel
-  const handlePasswordCancel = () => {
-    setShowPasswordDialog(false);
-    setPendingPasswordFile(null);
-    setExistingPasswords([]);
-    setIsModernEncryption(false);
-    setPasswordError('');
   };
 
   // Handle combining multiple files (combination mode)
@@ -1439,6 +1489,8 @@ export default function App() {
                   onRemoveDuplicates={handleRemoveDuplicates}
                   companyName={currentMapping?.companyName}
                   sourceFilename={sourceFile?.name}
+                  sourceData={sourceData}
+                  sourceColumns={sourceColumns}
                 />
               </>
             )}
@@ -1485,18 +1537,6 @@ export default function App() {
           existingProcesses={processes}
           onComplete={handleImportAction}
           onCancel={handleImportComplete}
-        />
-
-        {/* Password Dialog */}
-        <PasswordDialog
-          isOpen={showPasswordDialog}
-          fileName={pendingPasswordFile?.name || ''}
-          companyName={detectedCompany}
-          existingPasswords={existingPasswords}
-          isModernEncryption={isModernEncryption}
-          errorMessage={passwordError}
-          onSubmit={handlePasswordSubmit}
-          onCancel={handlePasswordCancel}
         />
       </main>
     </div>

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { OUTPUT_COLUMNS, downloadSFTPCSV } from '../utils/outputFormatter';
+import { OUTPUT_COLUMNS, downloadSFTPCSV, downloadPersonalGroupCSV } from '../utils/outputFormatter';
 import { getErrorRowNumbers } from '../utils/validation';
 import DuplicateChecker from './DuplicateChecker';
 
@@ -13,16 +13,25 @@ export default function OutputPreview({
   filename,
   onRemoveDuplicates,
   companyName,
-  sourceFilename
+  sourceFilename,
+  sourceData,
+  sourceColumns
 }) {
   const [duplicateCheckPassed, setDuplicateCheckPassed] = useState(null);
   const [hasDuplicates, setHasDuplicates] = useState(false);
   const [isCarMaintenance, setIsCarMaintenance] = useState(false);
+  const [isPersonalGroup, setIsPersonalGroup] = useState(false);
 
-  // Auto-detect car maintenance from source filename
+  // Auto-detect car maintenance or personal group from source filename
   useEffect(() => {
-    if (sourceFilename && sourceFilename.toLowerCase().includes('car maintenance')) {
-      setIsCarMaintenance(true);
+    if (sourceFilename) {
+      const lowerFilename = sourceFilename.toLowerCase();
+      if (lowerFilename.includes('car maintenance')) {
+        setIsCarMaintenance(true);
+      }
+      if (lowerFilename.includes('personal group')) {
+        setIsPersonalGroup(true);
+      }
     }
   }, [sourceFilename]);
 
@@ -30,6 +39,15 @@ export default function OutputPreview({
   const handleSFTPDownload = () => {
     if (data && companyName) {
       downloadSFTPCSV(data, companyName);
+    }
+  };
+
+  // Handle Personal Group download
+  const handlePersonalGroupDownload = () => {
+    if (data && companyName && sourceData && sourceColumns) {
+      // Get list of processed emails from output data
+      const processedEmails = data.map(row => row['Email']).filter(e => e);
+      downloadPersonalGroupCSV(sourceData, processedEmails, sourceColumns, companyName);
     }
   };
 
@@ -69,8 +87,8 @@ export default function OutputPreview({
         <ValidationPanel errors={validationErrors} />
       )}
 
-      {/* Car Maintenance Checkbox */}
-      <div style={{ marginBottom: '1rem' }}>
+      {/* Special Mode Checkboxes */}
+      <div style={{ marginBottom: '1rem', display: 'flex', gap: '2rem', flexWrap: 'wrap' }}>
         <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
           <input
             type="checkbox"
@@ -79,6 +97,16 @@ export default function OutputPreview({
             style={{ width: '18px', height: '18px' }}
           />
           <span style={{ fontWeight: 500 }}>Car Maintenance</span>
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={isPersonalGroup}
+            onChange={(e) => setIsPersonalGroup(e.target.checked)}
+            style={{ width: '18px', height: '18px' }}
+          />
+          <span style={{ fontWeight: 500 }}>Personal Group</span>
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>(adds LOC Upload Date)</span>
         </label>
       </div>
 
@@ -163,6 +191,14 @@ export default function OutputPreview({
                 onClick={handleSFTPDownload}
               >
                 ⬇ Download SFTP
+              </button>
+            )}
+            {isPersonalGroup && sourceData && (
+              <button
+                className="btn btn-success"
+                onClick={handlePersonalGroupDownload}
+              >
+                ⬇ Download Personal Group
               </button>
             )}
           </div>

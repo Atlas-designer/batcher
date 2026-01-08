@@ -44,7 +44,11 @@ export default function ProcessEditor({
   // Output options
   const [outputOptions, setOutputOptions] = useState({
     roundLOCAmount: false,
-    fallbackEmail: ''
+    fallbackEmail: '',
+    secondaryEmailColumn: '',
+    emailKeywordsToReplace: [],
+    locMinimum: '',
+    locMaximum: ''
   });
 
   // Display name (for user interface only, separate from company detection name)
@@ -61,10 +65,8 @@ export default function ProcessEditor({
   const [isEditingExisting, setIsEditingExisting] = useState(false);
   const [originalProcessId, setOriginalProcessId] = useState(null);
 
-  // Password management
-  const [savedPasswords, setSavedPasswords] = useState([]);
-  const [newPassword, setNewPassword] = useState('');
-  const [showPasswords, setShowPasswords] = useState(false);
+  // Email keyword input
+  const [newEmailKeyword, setNewEmailKeyword] = useState('');
 
   // Initialize with existing mapping if available
   useEffect(() => {
@@ -81,7 +83,11 @@ export default function ProcessEditor({
       });
       setOutputOptions(existingMapping.outputOptions || {
         roundLOCAmount: false,
-        fallbackEmail: ''
+        fallbackEmail: '',
+        secondaryEmailColumn: '',
+        emailKeywordsToReplace: [],
+        locMinimum: '',
+        locMaximum: ''
       });
       setDisplayName(existingMapping.displayName || '');
       setEditableCompanyName(existingMapping.companyName || companyName || '');
@@ -89,11 +95,6 @@ export default function ProcessEditor({
       setBenefitProvider(existingMapping.benefitProvider || '');
       setIsEditingExisting(true);
       setOriginalProcessId(existingMapping.id || null);
-      // Load saved passwords
-      const passwords = existingMapping.passwords
-        ? (Array.isArray(existingMapping.passwords) ? existingMapping.passwords : [existingMapping.passwords])
-        : [];
-      setSavedPasswords(passwords);
 
       // If no source columns from file, derive them from saved mapping
       if (sourceColumns.length === 0) {
@@ -119,10 +120,16 @@ export default function ProcessEditor({
       setEditableCompanyName(companyName || '');
       setEditableEntity(entity || '');
       setBenefitProvider('');
-      setOutputOptions({ roundLOCAmount: false, fallbackEmail: '' });
+      setOutputOptions({
+        roundLOCAmount: false,
+        fallbackEmail: '',
+        secondaryEmailColumn: '',
+        emailKeywordsToReplace: [],
+        locMinimum: '',
+        locMaximum: ''
+      });
       setIsEditingExisting(false);
       setOriginalProcessId(null);
-      setSavedPasswords([]);
       setDerivedSourceColumns([]);
     }
   }, [existingMapping, sourceColumns, companyName, entity]);
@@ -181,7 +188,6 @@ export default function ProcessEditor({
       fields: mappings,
       additionalDetails,
       outputOptions,
-      passwords: savedPasswords.length > 0 ? savedPasswords : null,
       createdAt: new Date().toISOString(),
       // If editing and saving as new, don't pass the original ID
       // If editing and updating, pass the original ID
@@ -191,16 +197,23 @@ export default function ProcessEditor({
     onSave(processConfig);
   };
 
-  // Password management functions
-  const addPassword = () => {
-    if (newPassword.trim() && !savedPasswords.includes(newPassword.trim())) {
-      setSavedPasswords([...savedPasswords, newPassword.trim()]);
-      setNewPassword('');
+  // Email keyword management
+  const addEmailKeyword = () => {
+    const keyword = newEmailKeyword.trim().toLowerCase();
+    if (keyword && !outputOptions.emailKeywordsToReplace.includes(keyword)) {
+      setOutputOptions(prev => ({
+        ...prev,
+        emailKeywordsToReplace: [...prev.emailKeywordsToReplace, keyword]
+      }));
+      setNewEmailKeyword('');
     }
   };
 
-  const removePassword = (index) => {
-    setSavedPasswords(savedPasswords.filter((_, i) => i !== index));
+  const removeEmailKeyword = (keyword) => {
+    setOutputOptions(prev => ({
+      ...prev,
+      emailKeywordsToReplace: prev.emailKeywordsToReplace.filter(k => k !== keyword)
+    }));
   };
 
   // Handle proceed without saving
@@ -611,9 +624,66 @@ export default function ProcessEditor({
             </div>
           </label>
 
+          {/* LOC Amount Range Filter */}
+          <div>
+            <label style={{ fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', display: 'block' }}>
+              LOC Amount Range Filter (optional)
+            </label>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+              <input
+                type="number"
+                value={outputOptions.locMinimum}
+                onChange={(e) => setOutputOptions(prev => ({
+                  ...prev,
+                  locMinimum: e.target.value
+                }))}
+                placeholder="Min (e.g., 100)"
+                style={{ width: '120px', padding: '0.5rem', border: '1px solid var(--border)', borderRadius: '0.375rem' }}
+              />
+              <span style={{ color: 'var(--text-muted)' }}>to</span>
+              <input
+                type="number"
+                value={outputOptions.locMaximum}
+                onChange={(e) => setOutputOptions(prev => ({
+                  ...prev,
+                  locMaximum: e.target.value
+                }))}
+                placeholder="Max (e.g., 5000)"
+                style={{ width: '120px', padding: '0.5rem', border: '1px solid var(--border)', borderRadius: '0.375rem' }}
+              />
+            </div>
+            <small style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
+              Employees with LOC outside this range will be excluded. Leave blank for no filter.
+            </small>
+          </div>
+
+          {/* Secondary Email Column (Work Email Priority) */}
+          <div className="additional-details-row">
+            <label style={{ fontSize: '0.875rem', minWidth: '140px' }}>Secondary Email:</label>
+            <div style={{ flex: 1 }}>
+              <select
+                value={outputOptions.secondaryEmailColumn}
+                onChange={(e) => setOutputOptions(prev => ({
+                  ...prev,
+                  secondaryEmailColumn: e.target.value
+                }))}
+                disabled={isEditingWithoutFile}
+                style={{ width: '100%', padding: '0.5rem', border: '1px solid var(--border)', borderRadius: '0.375rem' }}
+              >
+                <option value="">-- None --</option>
+                {effectiveSourceColumns.map(col => (
+                  <option key={col} value={col}>{col}</option>
+                ))}
+              </select>
+              <small style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
+                If the main email column is empty, use this column as fallback (e.g., Personal Email as backup for Work Email)
+              </small>
+            </div>
+          </div>
+
           {/* Fallback Email */}
           <div className="additional-details-row">
-            <label style={{ fontSize: '0.875rem', minWidth: '140px' }}>Email Fill:</label>
+            <label style={{ fontSize: '0.875rem', minWidth: '140px' }}>Fallback Email:</label>
             <div style={{ flex: 1 }}>
               <input
                 type="email"
@@ -626,103 +696,84 @@ export default function ProcessEditor({
                 style={{ width: '100%', padding: '0.5rem', border: '1px solid var(--border)', borderRadius: '0.375rem' }}
               />
               <small style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
-                If an applicant is missing an email, this address will be used instead
+                If both email columns are empty, this address will be used
               </small>
             </div>
           </div>
-        </div>
-      </div>
 
-      {/* Password Management */}
-      <div className="additional-details-config" style={{ marginTop: '1.5rem' }}>
-        <h4>File Passwords</h4>
-        <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
-          Save passwords for encrypted Excel files from this company
-        </p>
-
-        {/* Saved passwords list */}
-        {savedPasswords.length > 0 && (
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', marginBottom: '0.5rem', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={showPasswords}
-                onChange={(e) => setShowPasswords(e.target.checked)}
-              />
-              Show passwords
+          {/* Email Keywords to Replace */}
+          <div>
+            <label style={{ fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', display: 'block' }}>
+              Replace Invalid Email Keywords
             </label>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              {savedPasswords.map((pwd, index) => (
-                <div
-                  key={index}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.5rem',
-                    padding: '0.5rem',
-                    background: 'var(--bg)',
-                    borderRadius: '0.375rem'
-                  }}
-                >
-                  <span style={{ flex: 1, fontFamily: 'monospace' }}>
-                    {showPasswords ? pwd : '••••••••'}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => removePassword(index)}
+            <small style={{ color: 'var(--text-muted)', fontSize: '0.75rem', display: 'block', marginBottom: '0.5rem' }}>
+              If an email contains any of these keywords (e.g., "none", "n/a"), replace with the fallback email
+            </small>
+            {outputOptions.emailKeywordsToReplace?.length > 0 && (
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+                {outputOptions.emailKeywordsToReplace.map((keyword) => (
+                  <span
+                    key={keyword}
                     style={{
-                      background: 'var(--danger)',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '0.25rem',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.25rem',
                       padding: '0.25rem 0.5rem',
-                      cursor: 'pointer',
-                      fontSize: '0.75rem'
+                      background: 'var(--bg)',
+                      borderRadius: '0.25rem',
+                      fontSize: '0.8rem'
                     }}
                   >
-                    Remove
-                  </button>
-                </div>
-              ))}
+                    {keyword}
+                    <button
+                      type="button"
+                      onClick={() => removeEmailKeyword(keyword)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        padding: '0 0.25rem',
+                        color: 'var(--error)',
+                        fontSize: '0.9rem'
+                      }}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <input
+                type="text"
+                value={newEmailKeyword}
+                onChange={(e) => setNewEmailKeyword(e.target.value)}
+                placeholder="e.g., none, n/a, blank"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    addEmailKeyword();
+                  }
+                }}
+                style={{
+                  flex: 1,
+                  padding: '0.5rem',
+                  border: '1px solid var(--border)',
+                  borderRadius: '0.375rem'
+                }}
+              />
+              <button
+                type="button"
+                onClick={addEmailKeyword}
+                disabled={!newEmailKeyword.trim()}
+                className="btn btn-secondary"
+                style={{ whiteSpace: 'nowrap' }}
+              >
+                Add Keyword
+              </button>
             </div>
           </div>
-        )}
-
-        {/* Add new password */}
-        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-          <input
-            type="text"
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            placeholder="Enter new password..."
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                addPassword();
-              }
-            }}
-            style={{
-              flex: 1,
-              padding: '0.5rem',
-              border: '1px solid var(--border)',
-              borderRadius: '0.375rem'
-            }}
-          />
-          <button
-            type="button"
-            onClick={addPassword}
-            disabled={!newPassword.trim()}
-            className="btn btn-secondary"
-            style={{ whiteSpace: 'nowrap' }}
-          >
-            Add Password
-          </button>
         </div>
-        <small style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.5rem', display: 'block' }}>
-          {savedPasswords.length === 0
-            ? 'No passwords saved. Passwords will be prompted when needed.'
-            : `${savedPasswords.length} password(s) saved. The system will try each one automatically.`}
-        </small>
       </div>
 
       {/* Action Buttons */}

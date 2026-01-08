@@ -56,24 +56,63 @@ function cleanLOCAmount(value, roundUp = false) {
 }
 
 /**
+ * Check if an email should be replaced based on keywords
+ */
+function shouldReplaceEmail(email, keywords) {
+  if (!email || !keywords || keywords.length === 0) return false;
+  const emailLower = email.toLowerCase().trim();
+  return keywords.some(keyword => emailLower.includes(keyword.toLowerCase()));
+}
+
+/**
+ * Simple email validation
+ */
+function isValidEmailFormat(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+/**
  * Apply mapping to source data and generate output rows
  * @param {Array} sourceData - Array of source data objects
  * @param {Object} mapping - Mapping configuration
  * @param {Object} options - Additional options (company name, entity, etc.)
- * @returns {Object} - { data: formatted rows, validation: errors }
+ * @returns {Object} - { data: formatted rows, validation: errors, filtered: count of filtered rows }
  */
 export function applyMapping(sourceData, mapping, options = {}) {
   const outputRows = [];
   const validationErrors = [];
+  let filteredCount = 0;
 
   // Get output options
   const outputOptions = mapping.outputOptions || {};
   const roundLOCAmount = outputOptions.roundLOCAmount || false;
   const fallbackEmail = outputOptions.fallbackEmail || '';
+  const secondaryEmailColumn = outputOptions.secondaryEmailColumn || '';
+  const emailKeywordsToReplace = outputOptions.emailKeywordsToReplace || [];
+  const locMinimum = outputOptions.locMinimum ? parseFloat(outputOptions.locMinimum) : null;
+  const locMaximum = outputOptions.locMaximum ? parseFloat(outputOptions.locMaximum) : null;
 
   sourceData.forEach((sourceRow, rowIndex) => {
     const outputRow = {};
     const rowErrors = [];
+
+    // First, calculate LOC amount to check if row should be filtered
+    const locSourceColumn = mapping.fields?.['LOC Amount'];
+    let locValue = '';
+    if (locSourceColumn && sourceRow[locSourceColumn] !== undefined) {
+      locValue = cleanLOCAmount(String(sourceRow[locSourceColumn]).trim(), roundLOCAmount);
+    }
+    const locAmount = parseFloat(locValue) || 0;
+
+    // Apply LOC range filter
+    if (locMinimum !== null && locAmount < locMinimum) {
+      filteredCount++;
+      return; // Skip this row
+    }
+    if (locMaximum !== null && locAmount > locMaximum) {
+      filteredCount++;
+      return; // Skip this row
+    }
 
     // Apply each mapping
     OUTPUT_COLUMNS.forEach(col => {
@@ -90,9 +129,24 @@ export function applyMapping(sourceData, mapping, options = {}) {
       if (col.key === 'LOC Amount') {
         value = cleanLOCAmount(value, roundLOCAmount);
       } else if (col.key === 'Email') {
-        // Apply fallback email if value is empty and fallback is provided
+        // Enhanced email handling with secondary column and keyword replacement
         value = sanitizeString(value);
-        if (!value && fallbackEmail) {
+
+        // Check if primary email should be replaced (contains invalid keywords or not valid format)
+        const shouldUseSecondary = !value ||
+          shouldReplaceEmail(value, emailKeywordsToReplace) ||
+          (!isValidEmailFormat(value) && value.length > 0);
+
+        // Try secondary email column if primary is invalid
+        if (shouldUseSecondary && secondaryEmailColumn && sourceRow[secondaryEmailColumn]) {
+          const secondaryEmail = sanitizeString(String(sourceRow[secondaryEmailColumn]).trim());
+          if (secondaryEmail && isValidEmailFormat(secondaryEmail) && !shouldReplaceEmail(secondaryEmail, emailKeywordsToReplace)) {
+            value = secondaryEmail;
+          }
+        }
+
+        // Apply fallback email if still empty or invalid
+        if ((!value || shouldReplaceEmail(value, emailKeywordsToReplace) || !isValidEmailFormat(value)) && fallbackEmail) {
           value = fallbackEmail;
         }
       } else {
@@ -134,7 +188,8 @@ export function applyMapping(sourceData, mapping, options = {}) {
 
   return {
     data: outputRows,
-    validation: validationErrors
+    validation: validationErrors,
+    filtered: filteredCount
   };
 }
 
@@ -271,6 +326,84 @@ export function toSFTPCSV(data) {
   });
 
   return [headerLine, ...dataLines].join('\r\n') + '\r\n';
+}
+
+/**
+ * Convert data to Personal Group CSV format (adds LOC Upload Date column)
+ * @param {Array} originalData - Original source data (from file)
+ * @param {Array} processedEmails - Array of emails that were processed
+ * @param {Array} headers - Original headers from source file
+ */
+export function toPersonalGroupCSV(originalData, processedEmails, headers) {
+  if (!originalData || originalData.length === 0) {
+    return '';
+  }
+
+  // Get today's date in DD/MM/YYYY format
+  const now = new Date();
+  const day = String(now.getDate()).padStart(2, '0');
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const year = now.getFullYear();
+  const dateStr = `${day}/${month}/${year}`;
+
+  // Create a Set of processed emails for fast lookup (lowercase for comparison)
+  const processedSet = new Set(processedEmails.map(e => e.toLowerCase().trim()));
+
+  // Add LOC Upload Date to headers
+  const newHeaders = [...headers, 'LOC Upload Date'];
+
+  // Header row
+  const headerLine = newHeaders.map(h => escapeCSV(h)).join(',');
+
+  // Data rows - add date for processed rows, leave blank for others
+  const dataLines = originalData.map(row => {
+    // Find email in this row (check all columns)
+    let wasProcessed = false;
+    for (const value of Object.values(row)) {
+      if (value && typeof value === 'string') {
+        const email = value.toLowerCase().trim();
+        if (processedSet.has(email)) {
+          wasProcessed = true;
+          break;
+        }
+      }
+    }
+
+    const rowValues = headers.map(h => escapeCSV(row[h] || ''));
+    rowValues.push(wasProcessed ? dateStr : '');
+    return rowValues.join(',');
+  });
+
+  return [headerLine, ...dataLines].join('\r\n') + '\r\n';
+}
+
+/**
+ * Download Personal Group CSV file
+ */
+export function downloadPersonalGroupCSV(originalData, processedEmails, headers, companyName) {
+  // Format date as DD.MM.YY
+  const now = new Date();
+  const day = String(now.getDate()).padStart(2, '0');
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const year = String(now.getFullYear()).slice(-2);
+  const dateStr = `${day}.${month}.${year}`;
+
+  const filename = `${companyName} Personal Group ${dateStr}.csv`;
+
+  const csvContent = toPersonalGroupCSV(originalData, processedEmails, headers);
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+
+  const link = document.createElement('a');
+  link.setAttribute('href', url);
+  link.setAttribute('download', filename);
+  link.style.visibility = 'hidden';
+
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+
+  URL.revokeObjectURL(url);
 }
 
 /**
