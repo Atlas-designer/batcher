@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { OUTPUT_COLUMNS, downloadSFTPCSV, downloadPersonalGroupCSV } from '../utils/outputFormatter';
+import { useState, useEffect, useMemo } from 'react';
+import { OUTPUT_COLUMNS, downloadCSV, downloadSFTPCSV, downloadPersonalGroupCSV, toCSV, toSFTPCSV, toPersonalGroupCSV } from '../utils/outputFormatter';
 import { getErrorRowNumbers } from '../utils/validation';
 import DuplicateChecker from './DuplicateChecker';
 
@@ -36,21 +36,78 @@ export default function OutputPreview({
     }
   }, [sourceFilename]);
 
-  // Handle SFTP download
-  const handleSFTPDownload = () => {
-    if (data && companyName) {
-      downloadSFTPCSV(data, companyName);
-    }
+  // Get date string for filenames
+  const getDateStr = () => {
+    const now = new Date();
+    const day = String(now.getDate()).padStart(2, '0');
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const year = String(now.getFullYear()).slice(-2);
+    return `${day}.${month}.${year}`;
   };
 
-  // Handle Personal Group download
-  const handlePersonalGroupDownload = () => {
-    if (data && companyName && sourceData && sourceColumns) {
-      // Get list of processed emails from output data
-      const processedEmails = data.map(row => row['Email']).filter(e => e);
-      downloadPersonalGroupCSV(sourceData, processedEmails, sourceColumns, companyName);
-    }
+  // Handle CSV download for a specific chunk
+  const handleChunkDownload = (chunkIndex) => {
+    const chunk = dataChunks[chunkIndex];
+    if (!chunk) return;
+
+    const dateStr = getDateStr();
+    const suffix = needsSplit ? ` ${chunkIndex + 1}` : '';
+    const downloadFilename = `${companyName} ${dateStr}${suffix}.csv`;
+    downloadCSV(chunk, downloadFilename);
   };
+
+  // Handle SFTP download for a specific chunk
+  const handleSFTPChunkDownload = (chunkIndex) => {
+    const chunk = dataChunks[chunkIndex];
+    if (!chunk || !companyName) return;
+
+    const dateStr = getDateStr();
+    const suffix = needsSplit ? ` ${chunkIndex + 1}` : '';
+    const downloadFilename = `${companyName} SFTP ${dateStr}${suffix}.csv`;
+
+    // Create and download
+    const csvContent = toSFTPCSV(chunk);
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', downloadFilename);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  // Handle Personal Group download for a specific chunk
+  const handlePersonalGroupChunkDownload = (chunkIndex) => {
+    const chunk = dataChunks[chunkIndex];
+    if (!chunk || !companyName || !sourceData || !sourceColumns) return;
+
+    // Get list of processed emails from this chunk
+    const processedEmails = chunk.map(row => row['Email']).filter(e => e);
+
+    const dateStr = getDateStr();
+    const suffix = needsSplit ? ` ${chunkIndex + 1}` : '';
+    const downloadFilename = `Uploaded ${companyName} ${dateStr}${suffix}.csv`;
+
+    // Create and download
+    const csvContent = toPersonalGroupCSV(sourceData, processedEmails, sourceColumns);
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', downloadFilename);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  // Legacy handlers for single file (when not split)
+  const handleSFTPDownload = () => handleSFTPChunkDownload(0);
+  const handlePersonalGroupDownload = () => handlePersonalGroupChunkDownload(0);
 
   // Handle duplicate check results
   const handleDuplicatesFound = (duplicates) => {
@@ -72,6 +129,18 @@ export default function OutputPreview({
     const locValue = parseFloat(row['LOC Amount']) || 0;
     return sum + locValue;
   }, 0) : 0;
+
+  // Calculate number of files needed and split data into chunks
+  const dataChunks = useMemo(() => {
+    if (!data || data.length === 0) return [];
+    const chunks = [];
+    for (let i = 0; i < data.length; i += maxEmployees) {
+      chunks.push(data.slice(i, i + maxEmployees));
+    }
+    return chunks;
+  }, [data, maxEmployees]);
+
+  const needsSplit = dataChunks.length > 1;
 
   if (!data || data.length === 0) {
     return (
@@ -204,30 +273,74 @@ export default function OutputPreview({
           <div className="action-bar-left">
             <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
               Output: {filename}
+              {needsSplit && (
+                <span style={{ color: 'var(--warning)', marginLeft: '0.5rem' }}>
+                  (Split into {dataChunks.length} files)
+                </span>
+              )}
             </span>
           </div>
-          <div className="action-bar-right" style={{ display: 'flex', gap: '0.5rem' }}>
-            <button
-              className="btn btn-success"
-              onClick={onDownload}
-            >
-              ⬇ Download CSV
-            </button>
-            {isCarMaintenance && (
-              <button
-                className="btn btn-success"
-                onClick={handleSFTPDownload}
-              >
-                ⬇ Download SFTP
-              </button>
-            )}
-            {isPersonalGroup && sourceData && (
-              <button
-                className="btn btn-success"
-                onClick={handlePersonalGroupDownload}
-              >
-                ⬇ Download Personal Group
-              </button>
+          <div className="action-bar-right" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            {!needsSplit ? (
+              // Single file download
+              <>
+                <button
+                  className="btn btn-success"
+                  onClick={onDownload}
+                >
+                  ⬇ Download CSV
+                </button>
+                {isCarMaintenance && (
+                  <button
+                    className="btn btn-success"
+                    onClick={handleSFTPDownload}
+                  >
+                    ⬇ Download SFTP
+                  </button>
+                )}
+                {isPersonalGroup && sourceData && (
+                  <button
+                    className="btn btn-success"
+                    onClick={handlePersonalGroupDownload}
+                  >
+                    ⬇ Download Personal Group
+                  </button>
+                )}
+              </>
+            ) : (
+              // Multiple file downloads
+              <>
+                {dataChunks.map((chunk, idx) => (
+                  <button
+                    key={`csv-${idx}`}
+                    className="btn btn-success"
+                    onClick={() => handleChunkDownload(idx)}
+                    title={`${chunk.length} employees`}
+                  >
+                    ⬇ Download CSV {idx + 1}
+                  </button>
+                ))}
+                {isCarMaintenance && dataChunks.map((chunk, idx) => (
+                  <button
+                    key={`sftp-${idx}`}
+                    className="btn btn-success"
+                    onClick={() => handleSFTPChunkDownload(idx)}
+                    title={`${chunk.length} employees`}
+                  >
+                    ⬇ Download SFTP {idx + 1}
+                  </button>
+                ))}
+                {isPersonalGroup && sourceData && dataChunks.map((chunk, idx) => (
+                  <button
+                    key={`pg-${idx}`}
+                    className="btn btn-success"
+                    onClick={() => handlePersonalGroupChunkDownload(idx)}
+                    title={`${chunk.length} employees`}
+                  >
+                    ⬇ Download Personal Group {idx + 1}
+                  </button>
+                ))}
+              </>
             )}
           </div>
         </div>
