@@ -339,12 +339,12 @@ export function toPersonalGroupCSV(originalData, processedEmails, headers) {
     return '';
   }
 
-  // Get today's date in DD/MM/YY format (e.g., 08/01/26 for 8th Jan 2026)
+  // Get today's date in DD.MM.YY format (e.g., 08.01.26 for 8th Jan 2026)
   const now = new Date();
   const day = String(now.getDate()).padStart(2, '0');
   const month = String(now.getMonth() + 1).padStart(2, '0');
   const year = String(now.getFullYear()).slice(-2);
-  const dateStr = `${day}/${month}/${year}`;
+  const dateStr = `${day}.${month}.${year}`;
 
   // Create a Set of processed emails for fast lookup (lowercase for comparison)
   const processedSet = new Set(processedEmails.map(e => e.toLowerCase().trim()));
