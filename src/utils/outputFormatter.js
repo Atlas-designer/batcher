@@ -339,11 +339,11 @@ export function toPersonalGroupCSV(originalData, processedEmails, headers) {
     return '';
   }
 
-  // Get today's date in DD/MM/YYYY format
+  // Get today's date in DD/MM/YY format (e.g., 08/01/26 for 8th Jan 2026)
   const now = new Date();
   const day = String(now.getDate()).padStart(2, '0');
   const month = String(now.getMonth() + 1).padStart(2, '0');
-  const year = now.getFullYear();
+  const year = String(now.getFullYear()).slice(-2);
   const dateStr = `${day}/${month}/${year}`;
 
   // Create a Set of processed emails for fast lookup (lowercase for comparison)
@@ -354,6 +354,19 @@ export function toPersonalGroupCSV(originalData, processedEmails, headers) {
 
   // Header row
   const headerLine = newHeaders.map(h => escapeCSV(h)).join(',');
+
+  // Helper to format cell values (handle Date objects from Excel)
+  const formatCellValue = (value) => {
+    if (value === null || value === undefined) return '';
+    if (value instanceof Date) {
+      // Format Date objects as DD/MM/YYYY
+      const d = String(value.getDate()).padStart(2, '0');
+      const m = String(value.getMonth() + 1).padStart(2, '0');
+      const y = value.getFullYear();
+      return `${d}/${m}/${y}`;
+    }
+    return String(value);
+  };
 
   // Data rows - add date for processed rows, leave blank for others
   const dataLines = originalData.map(row => {
@@ -369,7 +382,7 @@ export function toPersonalGroupCSV(originalData, processedEmails, headers) {
       }
     }
 
-    const rowValues = headers.map(h => escapeCSV(row[h] || ''));
+    const rowValues = headers.map(h => escapeCSV(formatCellValue(row[h])));
     rowValues.push(wasProcessed ? dateStr : '');
     return rowValues.join(',');
   });
@@ -381,14 +394,14 @@ export function toPersonalGroupCSV(originalData, processedEmails, headers) {
  * Download Personal Group CSV file
  */
 export function downloadPersonalGroupCSV(originalData, processedEmails, headers, companyName) {
-  // Format date as DD.MM.YY
+  // Format date as DD.MM.YY for filename
   const now = new Date();
   const day = String(now.getDate()).padStart(2, '0');
   const month = String(now.getMonth() + 1).padStart(2, '0');
   const year = String(now.getFullYear()).slice(-2);
   const dateStr = `${day}.${month}.${year}`;
 
-  const filename = `${companyName} Personal Group ${dateStr}.csv`;
+  const filename = `Uploaded ${companyName} ${dateStr}.csv`;
 
   const csvContent = toPersonalGroupCSV(originalData, processedEmails, headers);
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
