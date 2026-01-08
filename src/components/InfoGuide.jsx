@@ -38,7 +38,7 @@ export default function InfoGuide() {
           marginTop: '1rem'
         }}>
           <strong>Key capabilities:</strong>
-          <ul style={{ marginTop: '0.5rem', marginBottom: 0 }}>
+          <ul style={{ marginTop: '0.5rem', marginBottom: 0, marginLeft: '1.5rem' }}>
             <li>Auto-detect company names and apply saved processes</li>
             <li>Map columns from any spreadsheet format</li>
             <li>Filter and validate employee data</li>
@@ -324,7 +324,7 @@ export default function InfoGuide() {
         textAlign: 'center'
       }}>
         <p style={{ margin: 0, color: 'var(--text-muted)' }}>
-          Need additional help? Contact your system administrator or refer to the Cycle to Work platform documentation.
+          Need additional Help? Make your own batch formatter then.
         </p>
       </div>
     </div>
@@ -356,7 +356,8 @@ function Section({ title, emoji, children, expanded, onToggle }) {
           justifyContent: 'space-between',
           fontSize: '1.2rem',
           fontWeight: 600,
-          transition: 'background 0.2s'
+          transition: 'background 0.2s',
+          color: 'white'
         }}
       >
         <span>
