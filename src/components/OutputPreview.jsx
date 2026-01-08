@@ -21,6 +21,7 @@ export default function OutputPreview({
   const [hasDuplicates, setHasDuplicates] = useState(false);
   const [isCarMaintenance, setIsCarMaintenance] = useState(false);
   const [isPersonalGroup, setIsPersonalGroup] = useState(false);
+  const [maxEmployees, setMaxEmployees] = useState(50);
 
   // Auto-detect car maintenance or personal group from source filename
   useEffect(() => {
@@ -66,6 +67,12 @@ export default function OutputPreview({
   const errorRows = getErrorRowNumbers(validationErrors);
   const hasErrors = validationErrors.length > 0;
 
+  // Calculate LOC Sum
+  const locSum = data ? data.reduce((sum, row) => {
+    const locValue = parseFloat(row['LOC Amount']) || 0;
+    return sum + locValue;
+  }, 0) : 0;
+
   if (!data || data.length === 0) {
     return (
       <div className="card">
@@ -88,7 +95,7 @@ export default function OutputPreview({
       )}
 
       {/* Special Mode Checkboxes */}
-      <div style={{ marginBottom: '1rem', display: 'flex', gap: '2rem', flexWrap: 'wrap' }}>
+      <div style={{ marginBottom: '1rem', display: 'flex', gap: '2rem', flexWrap: 'wrap', alignItems: 'center' }}>
         <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
           <input
             type="checkbox"
@@ -108,16 +115,37 @@ export default function OutputPreview({
           <span style={{ fontWeight: 500 }}>Personal Group</span>
           <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>(adds LOC Upload Date)</span>
         </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <span style={{ fontWeight: 500 }}>Max Employees:</span>
+          <input
+            type="number"
+            value={maxEmployees}
+            onChange={(e) => setMaxEmployees(parseInt(e.target.value) || 50)}
+            min="1"
+            style={{
+              width: '70px',
+              padding: '0.25rem 0.5rem',
+              border: '1px solid var(--border)',
+              borderRadius: '4px',
+              fontSize: '0.875rem'
+            }}
+          />
+        </label>
       </div>
 
       {/* Output Table */}
       <div className="card">
         <div className="card-header">
           <h3 className="card-title">Output Preview</h3>
-          <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-            {data.length} row{data.length !== 1 ? 's' : ''}
-            {hasErrors && ` (${validationErrors.length} with issues)`}
-          </span>
+          <div style={{ textAlign: 'right' }}>
+            <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem', display: 'block' }}>
+              {data.length} row{data.length !== 1 ? 's' : ''}
+              {hasErrors && ` (${validationErrors.length} with issues)`}
+            </span>
+            <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem', display: 'block' }}>
+              LOC Sum: £{locSum.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+          </div>
         </div>
 
         <div className="data-table-container" style={{ maxHeight: '400px', overflow: 'auto' }}>
