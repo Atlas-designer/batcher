@@ -355,7 +355,7 @@ export function toPersonalGroupCSV(originalData, processedEmails, headers) {
   // Header row
   const headerLine = newHeaders.map(h => escapeCSV(h)).join(',');
 
-  // Helper to format cell values (handle Date objects from Excel)
+  // Helper to format cell values (handle Date objects and malformed date strings from Excel)
   const formatCellValue = (value) => {
     if (value === null || value === undefined) return '';
     if (value instanceof Date) {
@@ -365,7 +365,15 @@ export function toPersonalGroupCSV(originalData, processedEmails, headers) {
       const y = value.getFullYear();
       return `${d}/${m}/${y}`;
     }
-    return String(value);
+    const str = String(value);
+    // Check for malformed Excel date strings like "01/08/2026Saturday" or similar
+    // Pattern: digits/digits/digits followed by day name
+    const malformedDateMatch = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)?$/i);
+    if (malformedDateMatch) {
+      // Return just the date part without the day name
+      return `${malformedDateMatch[1]}/${malformedDateMatch[2]}/${malformedDateMatch[3]}`;
+    }
+    return str;
   };
 
   // Data rows - add date for processed rows, leave blank for others
