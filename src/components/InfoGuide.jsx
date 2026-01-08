@@ -64,7 +64,7 @@ export default function InfoGuide() {
           </ul>
 
           <div className="screenshot-placeholder" style={{
-            background: 'var(--bg-secondary)',
+            background: 'rgba(255, 255, 255, 0.05)',
             border: '2px dashed var(--border)',
             borderRadius: '8px',
             padding: '2rem',
@@ -96,7 +96,7 @@ export default function InfoGuide() {
           </ul>
 
           <div className="screenshot-placeholder" style={{
-            background: 'var(--bg-secondary)',
+            background: 'rgba(255, 255, 255, 0.05)',
             border: '2px dashed var(--border)',
             borderRadius: '8px',
             padding: '2rem',
@@ -121,7 +121,7 @@ export default function InfoGuide() {
           </ul>
 
           <div className="screenshot-placeholder" style={{
-            background: 'var(--bg-secondary)',
+            background: 'rgba(255, 255, 255, 0.05)',
             border: '2px dashed var(--border)',
             borderRadius: '8px',
             padding: '2rem',
@@ -422,9 +422,9 @@ function Step({ number, title, children }) {
  */
 function InfoBox({ type = 'info', children }) {
   const styles = {
-    info: { background: '#e3f2fd', borderLeft: '4px solid #2196f3' },
-    tip: { background: '#f3e5f5', borderLeft: '4px solid #9c27b0' },
-    warning: { background: '#fff3e0', borderLeft: '4px solid #ff9800' }
+    info: { background: 'rgba(33, 150, 243, 0.1)', borderLeft: '4px solid #2196f3' },
+    tip: { background: 'rgba(156, 39, 176, 0.1)', borderLeft: '4px solid #9c27b0' },
+    warning: { background: 'rgba(255, 152, 0, 0.1)', borderLeft: '4px solid #ff9800' }
   };
 
   return (
@@ -432,7 +432,8 @@ function InfoBox({ type = 'info', children }) {
       ...styles[type],
       padding: '1rem',
       borderRadius: '4px',
-      margin: '1rem 0'
+      margin: '1rem 0',
+      color: 'white'
     }}>
       {children}
     </div>
