@@ -92,10 +92,29 @@ export default function DuplicateCheckerTab() {
     return isNaN(parsed) ? '' : parsed.toFixed(2);
   };
 
+  // Common words to exclude from matching (non-identifying data)
+  const COMMON_WORDS = [
+    // Frequencies
+    'monthly', 'weekly', 'daily', 'quarterly', 'annually', 'fortnightly',
+    // Countries
+    'uk', 'gb', 'usa', 'us', 'ireland', 'roi', 'england', 'scotland', 'wales',
+    // Status/Approval
+    'approved', 'pending', 'active', 'inactive', 'yes', 'no', 'true', 'false',
+    // Cycle to Work related
+    'c2w', 'ctw', 'cycletowork', 'cycle', 'work', 'bike', 'bikes',
+    'halfords', 'evans', 'cyclescheme',
+    // Generic terms
+    'employee', 'staff', 'member', 'person',
+    // Common placeholders
+    'n/a', 'na', 'none', 'null', 'undefined', '-', 'tbc', 'tbd',
+    // Payment/Salary terms
+    'salary', 'gross', 'net', 'deduction', 'payment'
+  ];
+
   // Extract meaningful values from a row (skip empty values and common non-identifying fields)
   const extractRowValues = (row) => {
     const values = [];
-    const skipColumns = /^(id|index|row|date|timestamp|created|updated|status)/i;
+    const skipColumns = /^(id|index|row|date|timestamp|created|updated|status|approval)/i;
 
     Object.entries(row).forEach(([key, value]) => {
       // Skip columns that are typically not identifying
@@ -103,6 +122,9 @@ export default function DuplicateCheckerTab() {
 
       const normalized = normalizeValue(value);
       if (normalized && normalized.length > 0) {
+        // Skip common non-identifying words
+        if (COMMON_WORDS.includes(normalized)) return;
+
         values.push({
           key,
           original: value,
@@ -141,9 +163,13 @@ export default function DuplicateCheckerTab() {
           const wordsA = String(valA.original).toLowerCase().split(/\s+/).filter(w => w.length > 1);
           const wordsB = String(valB.original).toLowerCase().split(/\s+/).filter(w => w.length > 1);
 
+          // Filter out common words before comparing
+          const meaningfulWordsA = wordsA.filter(w => !COMMON_WORDS.includes(w));
+          const meaningfulWordsB = wordsB.filter(w => !COMMON_WORDS.includes(w));
+
           // Check if there are matching words between the two values
-          const commonWords = wordsA.filter(wordA =>
-            wordsB.some(wordB => wordA === wordB || wordA.includes(wordB) || wordB.includes(wordA))
+          const commonWords = meaningfulWordsA.filter(wordA =>
+            meaningfulWordsB.some(wordB => wordA === wordB || wordA.includes(wordB) || wordB.includes(wordA))
           );
 
           // If we have at least 2 common words, consider it a match
@@ -198,13 +224,22 @@ export default function DuplicateCheckerTab() {
 
     setProcessing(true);
     const found = [];
+    const seenPairs = new Set(); // Track unique pairs to avoid duplicates
 
     // Compare each row in A against each row in B
     dataA.forEach((rowA, idxA) => {
       dataB.forEach((rowB, idxB) => {
+        // Create unique key for this pair
+        const pairKey = `${idxA}-${idxB}`;
+
+        // Skip if we've already processed this pair
+        if (seenPairs.has(pairKey)) return;
+
         const comparison = areRowsDuplicates(rowA, rowB);
 
         if (comparison.isDuplicate) {
+          seenPairs.add(pairKey);
+
           // Extract display values for the matched fields
           const displayMatches = comparison.matches.slice(0, 3); // Show first 3 matches
           const matchSummary = displayMatches.map(m => `${m.value}`).join(', ');
