@@ -71,16 +71,20 @@ export default function DuplicateCheckerTab() {
   const extractFullName = (row) => {
     const keys = Object.keys(row);
 
-    // Try to find first name + surname combination
+    // Try to find first name + surname combination (more flexible patterns)
     const firstNameKey = keys.find(k =>
-      /first.*name|forename|given.*name/i.test(k)
+      /^first|firstname|first.*name|forename|given.*name/i.test(k)
     );
     const surnameKey = keys.find(k =>
-      /surname|last.*name|family.*name/i.test(k)
+      /^surname|^last|lastname|last.*name|family.*name/i.test(k)
     );
 
     if (firstNameKey && surnameKey) {
-      return `${row[firstNameKey]} ${row[surnameKey]}`;
+      const firstName = String(row[firstNameKey] || '').trim();
+      const surname = String(row[surnameKey] || '').trim();
+      if (firstName || surname) {
+        return `${firstName} ${surname}`.trim();
+      }
     }
 
     // Try to find full name column
@@ -89,7 +93,7 @@ export default function DuplicateCheckerTab() {
     );
 
     if (fullNameKey) {
-      return row[fullNameKey];
+      return String(row[fullNameKey] || '').trim();
     }
 
     return '';
@@ -103,7 +107,7 @@ export default function DuplicateCheckerTab() {
       /loc|amount|value|cost|price/i.test(k)
     );
 
-    return locKey ? row[locKey] : '';
+    return locKey ? String(row[locKey] || '').trim() : '';
   };
 
   // Find duplicates between the two datasets
@@ -119,15 +123,16 @@ export default function DuplicateCheckerTab() {
       const nameB = extractFullName(rowB);
       const locB = extractLOC(rowB);
 
-      if (nameB && locB) {
+      // Only require name to be present - LOC can be empty
+      if (nameB) {
         const normalizedName = normalizeName(nameB);
-        const normalizedLOC = normalizeLOC(locB);
+        const normalizedLOC = locB ? normalizeLOC(locB) : 'NOLOC';
         const key = `${normalizedName}|${normalizedLOC}`;
 
         if (!mapB.has(key)) {
           mapB.set(key, []);
         }
-        mapB.get(key).push({ row: rowB, index: idxB, name: nameB, loc: locB });
+        mapB.get(key).push({ row: rowB, index: idxB, name: nameB, loc: locB || 'N/A' });
       }
     });
 
@@ -136,9 +141,10 @@ export default function DuplicateCheckerTab() {
       const nameA = extractFullName(rowA);
       const locA = extractLOC(rowA);
 
-      if (nameA && locA) {
+      // Only require name to be present - LOC can be empty
+      if (nameA) {
         const normalizedName = normalizeName(nameA);
-        const normalizedLOC = normalizeLOC(locA);
+        const normalizedLOC = locA ? normalizeLOC(locA) : 'NOLOC';
         const key = `${normalizedName}|${normalizedLOC}`;
 
         if (mapB.has(key)) {
@@ -151,7 +157,7 @@ export default function DuplicateCheckerTab() {
               indexB: matchB.index,
               nameA,
               nameB: matchB.name,
-              locA,
+              locA: locA || 'N/A',
               locB: matchB.loc,
               sourceRow: sourceSelection === 'A' ? rowA : matchB.row
             });
