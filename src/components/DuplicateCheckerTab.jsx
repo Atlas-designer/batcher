@@ -128,12 +128,43 @@ export default function DuplicateCheckerTab() {
     // Compare each value from A against all values from B
     valuesA.forEach(valA => {
       valuesB.forEach(valB => {
+        let isMatch = false;
+        let matchValue = valA.original;
+
         // Check for exact normalized match
         if (valA.normalized === valB.normalized) {
+          isMatch = true;
+        }
+        // Check for partial word matches (for split names)
+        else {
+          // Split both values into words and normalize
+          const wordsA = String(valA.original).toLowerCase().split(/\s+/).filter(w => w.length > 1);
+          const wordsB = String(valB.original).toLowerCase().split(/\s+/).filter(w => w.length > 1);
+
+          // Check if there are matching words between the two values
+          const commonWords = wordsA.filter(wordA =>
+            wordsB.some(wordB => wordA === wordB || wordA.includes(wordB) || wordB.includes(wordA))
+          );
+
+          // If we have at least 2 common words, consider it a match
+          if (commonWords.length >= 2) {
+            isMatch = true;
+            matchValue = commonWords.join(' ');
+          }
+          // For names, if we have at least 1 matching word and it looks like a name field
+          else if (commonWords.length >= 1 &&
+                   (/name|first|last|surname|forename/i.test(valA.key) ||
+                    /name|first|last|surname|forename/i.test(valB.key))) {
+            isMatch = true;
+            matchValue = commonWords.join(' ');
+          }
+        }
+
+        if (isMatch) {
           matches.push({
             keyA: valA.key,
             keyB: valB.key,
-            value: valA.original
+            value: matchValue
           });
 
           // Check if this looks like a name field
@@ -155,7 +186,7 @@ export default function DuplicateCheckerTab() {
       });
     });
 
-    // Consider it a duplicate if we have at least 2-3 matches including name
+    // Consider it a duplicate if we have at least 2 matches including name
     const isDuplicate = matches.length >= 2 && nameMatch;
 
     return { isDuplicate, matches, nameMatch, locMatch };

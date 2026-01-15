@@ -509,7 +509,8 @@ function ManualBatchMode() {
                               border: '1px solid transparent',
                               borderRadius: '0.25rem',
                               fontSize: '0.8rem',
-                              background: 'transparent'
+                              background: 'transparent',
+                              color: 'white'
                             }}
                             onFocus={(e) => e.target.style.borderColor = 'var(--border)'}
                             onBlur={(e) => e.target.style.borderColor = 'transparent'}
@@ -526,7 +527,8 @@ function ManualBatchMode() {
                               border: '1px solid transparent',
                               borderRadius: '0.25rem',
                               fontSize: '0.8rem',
-                              background: 'transparent'
+                              background: 'transparent',
+                              color: 'white'
                             }}
                             onFocus={(e) => e.target.style.borderColor = 'var(--border)'}
                             onBlur={(e) => e.target.style.borderColor = 'transparent'}
@@ -543,7 +545,8 @@ function ManualBatchMode() {
                               border: '1px solid transparent',
                               borderRadius: '0.25rem',
                               fontSize: '0.8rem',
-                              background: 'transparent'
+                              background: 'transparent',
+                              color: 'white'
                             }}
                             onFocus={(e) => e.target.style.borderColor = 'var(--border)'}
                             onBlur={(e) => e.target.style.borderColor = 'transparent'}
@@ -561,7 +564,8 @@ function ManualBatchMode() {
                               border: '1px solid transparent',
                               borderRadius: '0.25rem',
                               fontSize: '0.8rem',
-                              background: 'transparent'
+                              background: 'transparent',
+                              color: 'white'
                             }}
                             onFocus={(e) => e.target.style.borderColor = 'var(--border)'}
                             onBlur={(e) => e.target.style.borderColor = 'transparent'}
@@ -579,7 +583,8 @@ function ManualBatchMode() {
                               border: '1px solid transparent',
                               borderRadius: '0.25rem',
                               fontSize: '0.8rem',
-                              background: 'transparent'
+                              background: 'transparent',
+                              color: 'white'
                             }}
                             onFocus={(e) => e.target.style.borderColor = 'var(--border)'}
                             onBlur={(e) => e.target.style.borderColor = 'transparent'}
