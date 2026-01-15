@@ -3,7 +3,8 @@
     "allow": [
       "Bash(dir /s /b c:UsersTommy''sDocumentsBATCHER)",
       "Bash(findstr:*)",
-      "Bash(dir \"c:\\\\Users\\\\Tommy''s\\\\Documents\\\\BATCHER\\\\public\")"
+      "Bash(dir \"c:\\\\Users\\\\Tommy''s\\\\Documents\\\\BATCHER\\\\public\")",
+      "Bash(git add:*)"
     ]
   }
 }

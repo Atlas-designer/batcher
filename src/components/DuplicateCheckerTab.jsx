@@ -10,6 +10,8 @@ export default function DuplicateCheckerTab() {
   const [dataA, setDataA] = useState(null);
   const [dataB, setDataB] = useState(null);
   const [duplicates, setDuplicates] = useState([]);
+  const [potentialDuplicates, setPotentialDuplicates] = useState([]);
+  const [removedPotentials, setRemovedPotentials] = useState(new Set());
   const [sourceSelection, setSourceSelection] = useState('A');
   const [processing, setProcessing] = useState(false);
 
@@ -92,6 +94,13 @@ export default function DuplicateCheckerTab() {
     return isNaN(parsed) ? '' : parsed.toFixed(2);
   };
 
+  // Check if a column key looks like a LOC/amount field
+  const isLOCColumn = (key) => {
+    if (!key) return false;
+    const lowerKey = key.toLowerCase();
+    return /loc|voucher.*amount|bike.*price|bicycle.*price|bike.*value|voucher.*value|amount|price|cost|value/i.test(lowerKey);
+  };
+
   // Common words to exclude from matching (non-identifying data)
   const COMMON_WORDS = [
     // Frequencies
@@ -141,11 +150,14 @@ export default function DuplicateCheckerTab() {
     const valuesA = extractRowValues(rowA);
     const valuesB = extractRowValues(rowB);
 
-    if (valuesA.length === 0 || valuesB.length === 0) return { isDuplicate: false, matches: [] };
+    if (valuesA.length === 0 || valuesB.length === 0) return { isDuplicate: false, isPotential: false, matches: [] };
 
     const matches = [];
-    let nameMatch = false;
-    let locMatch = false;
+    let firstNameMatch = false;
+    let surnameMatch = false;
+    let locMatchA = null; // Store LOC value from A
+    let locMatchB = null; // Store LOC value from B
+    let emailMatch = false;
 
     // Compare each value from A against all values from B
     valuesA.forEach(valA => {
@@ -193,29 +205,52 @@ export default function DuplicateCheckerTab() {
             value: matchValue
           });
 
-          // Check if this looks like a name field
-          if (/name|first|last|surname|forename/i.test(valA.key) ||
-              /name|first|last|surname|forename/i.test(valB.key)) {
-            nameMatch = true;
+          // Check if this is a first name field
+          if (/^first|firstname|first.*name|forename/i.test(valA.key) ||
+              /^first|firstname|first.*name|forename/i.test(valB.key)) {
+            firstNameMatch = true;
           }
 
-          // Check if this looks like a LOC/amount field
-          if (/loc|amount|value|cost|price/i.test(valA.key) ||
-              /loc|amount|value|cost|price/i.test(valB.key)) {
-            // Verify it's actually a number
-            const num = parseFloat(String(valA.original).replace(/[£$€,\s]/g, ''));
-            if (!isNaN(num)) {
-              locMatch = true;
+          // Check if this is a surname/last name field
+          if (/^surname|^last|lastname|last.*name/i.test(valA.key) ||
+              /^surname|^last|lastname|last.*name/i.test(valB.key)) {
+            surnameMatch = true;
+          }
+
+          // Check if this is an email field
+          if (/email|e-mail/i.test(valA.key) || /email|e-mail/i.test(valB.key)) {
+            emailMatch = true;
+          }
+
+          // Check if this looks like a LOC/amount field - expanded detection
+          if (isLOCColumn(valA.key) || isLOCColumn(valB.key)) {
+            // Verify it's actually a number and store the values
+            const numA = parseFloat(String(valA.original).replace(/[£$€,\s]/g, ''));
+            const numB = parseFloat(String(valB.original).replace(/[£$€,\s]/g, ''));
+            if (!isNaN(numA) && !isNaN(numB)) {
+              locMatchA = numA;
+              locMatchB = numB;
             }
           }
         }
       });
     });
 
-    // Consider it a duplicate if we have at least 2 matches including name
-    const isDuplicate = matches.length >= 2 && nameMatch;
+    // Name match requires both first name AND surname to be matched
+    const nameMatch = firstNameMatch && surnameMatch;
 
-    return { isDuplicate, matches, nameMatch, locMatch };
+    // LOC match requires both values to be found AND equal
+    const locMatch = locMatchA !== null && locMatchB !== null && locMatchA === locMatchB;
+
+    // To be a confirmed duplicate, we need:
+    // 1. First name + surname match (nameMatch = true)
+    // 2. At least one more field: either email OR matching LOC amount
+    const isDuplicate = nameMatch && (emailMatch || locMatch);
+
+    // Potential duplicate: name matches but LOC amounts differ (if we found LOC fields)
+    const isPotential = nameMatch && locMatchA !== null && locMatchB !== null && locMatchA !== locMatchB;
+
+    return { isDuplicate, isPotential, matches, nameMatch, locMatch, locMatchA, locMatchB };
   };
 
   // Find duplicates between the two datasets
@@ -224,6 +259,7 @@ export default function DuplicateCheckerTab() {
 
     setProcessing(true);
     const found = [];
+    const potentials = [];
     const seenPairs = new Set(); // Track unique pairs to avoid duplicates
 
     // Compare each row in A against each row in B
@@ -253,28 +289,71 @@ export default function DuplicateCheckerTab() {
             matchSummary,
             nameMatch: comparison.nameMatch,
             locMatch: comparison.locMatch,
-            sourceRow: sourceSelection === 'A' ? rowA : rowB
+            sourceRow: sourceSelection === 'A' ? rowA : rowB,
+            pairKey
+          });
+        } else if (comparison.isPotential) {
+          seenPairs.add(pairKey);
+
+          const displayMatches = comparison.matches.slice(0, 3);
+          const matchSummary = displayMatches.map(m => `${m.value}`).join(', ');
+
+          potentials.push({
+            rowA,
+            rowB,
+            indexA: idxA,
+            indexB: idxB,
+            matches: comparison.matches,
+            matchSummary,
+            nameMatch: comparison.nameMatch,
+            locMatchA: comparison.locMatchA,
+            locMatchB: comparison.locMatchB,
+            sourceRow: sourceSelection === 'A' ? rowA : rowB,
+            pairKey
           });
         }
       });
     });
 
     setDuplicates(found);
+    setPotentialDuplicates(potentials);
+    setRemovedPotentials(new Set()); // Reset removed potentials
     setProcessing(false);
   };
 
   // Download duplicates as CSV
   const downloadDuplicates = () => {
-    if (duplicates.length === 0) return;
+    if (duplicates.length === 0 && potentialDuplicates.length === 0) return;
 
     // Get the raw data based on source selection
-    const sourceData = duplicates.map(dup => dup.sourceRow);
+    // Combine confirmed duplicates and non-removed potential duplicates
+    const confirmedDuplicates = duplicates.map(dup => dup.sourceRow);
+    const includedPotentials = potentialDuplicates
+      .filter(pot => !removedPotentials.has(pot.pairKey))
+      .map(pot => pot.sourceRow);
+
+    const allDuplicates = [...confirmedDuplicates, ...includedPotentials];
+
+    if (allDuplicates.length === 0) return;
+
+    // Deduplicate the source rows using a unique identifier
+    const uniqueRows = [];
+    const seenRowIdentifiers = new Set();
+
+    allDuplicates.forEach(row => {
+      // Create a unique identifier for each row based on all its values
+      const rowId = Object.keys(row).sort().map(k => `${k}:${row[k]}`).join('|');
+      if (!seenRowIdentifiers.has(rowId)) {
+        seenRowIdentifiers.add(rowId);
+        uniqueRows.push(row);
+      }
+    });
 
     // Convert to CSV
-    const headers = Object.keys(sourceData[0]);
+    const headers = Object.keys(uniqueRows[0]);
     const csvContent = [
       headers.join(','),
-      ...sourceData.map(row =>
+      ...uniqueRows.map(row =>
         headers.map(h => {
           const val = row[h] || '';
           const str = String(val);
@@ -298,6 +377,11 @@ export default function DuplicateCheckerTab() {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+  };
+
+  // Handle removal of potential duplicate
+  const handleRemovePotential = (pairKey) => {
+    setRemovedPotentials(prev => new Set([...prev, pairKey]));
   };
 
   return (
@@ -385,86 +469,183 @@ export default function DuplicateCheckerTab() {
       )}
 
       {/* Results */}
-      {duplicates.length > 0 && (
-        <div className="card">
-          <div className="card-header">
-            <h3 className="card-title">
-              Found {duplicates.length} Duplicate{duplicates.length !== 1 ? 's' : ''}
-            </h3>
+      {(duplicates.length > 0 || potentialDuplicates.length > 0) && (
+        <>
+          {/* Confirmed Duplicates */}
+          {duplicates.length > 0 && (
+            <div className="card" style={{ marginBottom: '1.5rem' }}>
+              <div className="card-header">
+                <h3 className="card-title" style={{ color: 'var(--danger)' }}>
+                  ✓ Confirmed Duplicates ({duplicates.length})
+                </h3>
+              </div>
+
+              <div style={{ maxHeight: '400px', overflow: 'auto' }}>
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th style={{ width: '50px' }}>#</th>
+                      <th>Matching Fields</th>
+                      <th style={{ width: '100px' }}>Matches</th>
+                      <th style={{ width: '80px' }}>Row A</th>
+                      <th style={{ width: '80px' }}>Row B</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {duplicates.map((dup, idx) => (
+                      <tr key={idx}>
+                        <td style={{ color: 'var(--text-muted)' }}>{idx + 1}</td>
+                        <td>
+                          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                            {dup.matches.slice(0, 4).map((match, mIdx) => (
+                              <span
+                                key={mIdx}
+                                style={{
+                                  padding: '0.25rem 0.5rem',
+                                  background: 'rgba(220, 53, 69, 0.1)',
+                                  borderRadius: '4px',
+                                  fontSize: '0.875rem',
+                                  border: '1px solid rgba(220, 53, 69, 0.3)',
+                                  color: 'var(--danger)'
+                                }}
+                              >
+                                {String(match.value).substring(0, 20)}
+                                {String(match.value).length > 20 && '...'}
+                              </span>
+                            ))}
+                            {dup.matches.length > 4 && (
+                              <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+                                +{dup.matches.length - 4} more
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          <span style={{
+                            padding: '0.25rem 0.5rem',
+                            background: 'var(--danger)',
+                            borderRadius: '12px',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            color: 'white'
+                          }}>
+                            {dup.matches.length}
+                          </span>
+                        </td>
+                        <td style={{ color: 'var(--text-muted)', fontSize: '0.875rem', textAlign: 'center' }}>
+                          {dup.indexA + 1}
+                        </td>
+                        <td style={{ color: 'var(--text-muted)', fontSize: '0.875rem', textAlign: 'center' }}>
+                          {dup.indexB + 1}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Potential Duplicates */}
+          {potentialDuplicates.length > 0 && (
+            <div className="card" style={{ marginBottom: '1.5rem' }}>
+              <div className="card-header">
+                <h3 className="card-title" style={{ color: 'var(--warning)' }}>
+                  ⚠ Potential Duplicates ({potentialDuplicates.filter(p => !removedPotentials.has(p.pairKey)).length})
+                </h3>
+                <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', margin: '0.5rem 0 0 0' }}>
+                  Name matches but LOC amounts differ - click to exclude from download
+                </p>
+              </div>
+
+              <div style={{ maxHeight: '400px', overflow: 'auto' }}>
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th style={{ width: '50px' }}>#</th>
+                      <th>Matching Fields</th>
+                      <th style={{ width: '150px' }}>LOC A / LOC B</th>
+                      <th style={{ width: '80px' }}>Row A</th>
+                      <th style={{ width: '80px' }}>Row B</th>
+                      <th style={{ width: '100px' }}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {potentialDuplicates.map((dup, idx) => {
+                      const isRemoved = removedPotentials.has(dup.pairKey);
+                      return (
+                        <tr key={idx} style={{ opacity: isRemoved ? 0.4 : 1 }}>
+                          <td style={{ color: 'var(--text-muted)' }}>{idx + 1}</td>
+                          <td>
+                            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                              {dup.matches.slice(0, 3).map((match, mIdx) => (
+                                <span
+                                  key={mIdx}
+                                  style={{
+                                    padding: '0.25rem 0.5rem',
+                                    background: 'rgba(255, 193, 7, 0.1)',
+                                    borderRadius: '4px',
+                                    fontSize: '0.875rem',
+                                    border: '1px solid rgba(255, 193, 7, 0.3)',
+                                    color: 'var(--warning)'
+                                  }}
+                                >
+                                  {String(match.value).substring(0, 20)}
+                                  {String(match.value).length > 20 && '...'}
+                                </span>
+                              ))}
+                            </div>
+                          </td>
+                          <td style={{ textAlign: 'center', fontSize: '0.875rem' }}>
+                            <div>£{dup.locMatchA?.toFixed(2) || 'N/A'}</div>
+                            <div style={{ color: 'var(--text-muted)' }}>vs</div>
+                            <div>£{dup.locMatchB?.toFixed(2) || 'N/A'}</div>
+                          </td>
+                          <td style={{ color: 'var(--text-muted)', fontSize: '0.875rem', textAlign: 'center' }}>
+                            {dup.indexA + 1}
+                          </td>
+                          <td style={{ color: 'var(--text-muted)', fontSize: '0.875rem', textAlign: 'center' }}>
+                            {dup.indexB + 1}
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            {!isRemoved ? (
+                              <button
+                                className="btn btn-secondary"
+                                style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}
+                                onClick={() => handleRemovePotential(dup.pairKey)}
+                              >
+                                Exclude
+                              </button>
+                            ) : (
+                              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Excluded</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Download Button */}
+          <div style={{ textAlign: 'center', marginTop: '1rem' }}>
             <button
               className="btn btn-success"
               onClick={downloadDuplicates}
+              disabled={duplicates.length === 0 && potentialDuplicates.filter(p => !removedPotentials.has(p.pairKey)).length === 0}
             >
-              ⬇ Download Duplicates (from File {sourceSelection})
+              ⬇ Download All Duplicates (from File {sourceSelection})
             </button>
+            <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
+              Includes {duplicates.length} confirmed + {potentialDuplicates.filter(p => !removedPotentials.has(p.pairKey)).length} potential duplicates
+            </p>
           </div>
-
-          <div style={{ maxHeight: '500px', overflow: 'auto' }}>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th style={{ width: '50px' }}>#</th>
-                  <th>Matching Fields</th>
-                  <th style={{ width: '100px' }}>Matches</th>
-                  <th style={{ width: '80px' }}>Row A</th>
-                  <th style={{ width: '80px' }}>Row B</th>
-                </tr>
-              </thead>
-              <tbody>
-                {duplicates.map((dup, idx) => (
-                  <tr key={idx}>
-                    <td style={{ color: 'var(--text-muted)' }}>{idx + 1}</td>
-                    <td>
-                      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                        {dup.matches.slice(0, 4).map((match, mIdx) => (
-                          <span
-                            key={mIdx}
-                            style={{
-                              padding: '0.25rem 0.5rem',
-                              background: 'rgba(33, 150, 243, 0.1)',
-                              borderRadius: '4px',
-                              fontSize: '0.875rem',
-                              border: '1px solid rgba(33, 150, 243, 0.3)'
-                            }}
-                          >
-                            {String(match.value).substring(0, 20)}
-                            {String(match.value).length > 20 && '...'}
-                          </span>
-                        ))}
-                        {dup.matches.length > 4 && (
-                          <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-                            +{dup.matches.length - 4} more
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td style={{ textAlign: 'center' }}>
-                      <span style={{
-                        padding: '0.25rem 0.5rem',
-                        background: 'var(--success)',
-                        borderRadius: '12px',
-                        fontSize: '0.75rem',
-                        fontWeight: 600,
-                        color: 'white'
-                      }}>
-                        {dup.matches.length}
-                      </span>
-                    </td>
-                    <td style={{ color: 'var(--text-muted)', fontSize: '0.875rem', textAlign: 'center' }}>
-                      {dup.indexA + 1}
-                    </td>
-                    <td style={{ color: 'var(--text-muted)', fontSize: '0.875rem', textAlign: 'center' }}>
-                      {dup.indexB + 1}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        </>
       )}
 
-      {fileA && fileB && duplicates.length === 0 && !processing && (dataA && dataB) && (
+      {fileA && fileB && duplicates.length === 0 && potentialDuplicates.length === 0 && !processing && (dataA && dataB) && (
         <div style={{
           padding: '3rem',
           textAlign: 'center',
@@ -474,7 +655,7 @@ export default function DuplicateCheckerTab() {
         }}>
           <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>✓</div>
           <h3>No duplicates found</h3>
-          <p>The two files don't share any matching rows with at least 2 common fields including a name</p>
+          <p>The two files don't share any matching rows with first name + surname + (email or LOC)</p>
         </div>
       )}
     </div>
