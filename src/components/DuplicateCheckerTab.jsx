@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 
 /**
@@ -13,9 +13,21 @@ export default function DuplicateCheckerTab() {
   const [sourceSelection, setSourceSelection] = useState('A');
   const [processing, setProcessing] = useState(false);
 
+  // Auto-search when both files are loaded
+  useEffect(() => {
+    if (dataA && dataB && !processing) {
+      findDuplicates();
+    }
+  }, [dataA, dataB]);
+
   // Handle file upload for side A
   const handleFileUploadA = async (file) => {
-    if (!file) return;
+    if (!file) {
+      setFileA(null);
+      setDataA(null);
+      setDuplicates([]);
+      return;
+    }
     setFileA(file);
     const data = await parseFile(file);
     setDataA(data);
@@ -24,7 +36,12 @@ export default function DuplicateCheckerTab() {
 
   // Handle file upload for side B
   const handleFileUploadB = async (file) => {
-    if (!file) return;
+    if (!file) {
+      setFileB(null);
+      setDataB(null);
+      setDuplicates([]);
+      return;
+    }
     setFileB(file);
     const data = await parseFile(file);
     setDataB(data);
@@ -53,7 +70,15 @@ export default function DuplicateCheckerTab() {
     });
   };
 
-  // Normalize a name by removing spaces, converting to lowercase
+  // Normalize a value for comparison
+  const normalizeValue = (value) => {
+    if (!value || value === '') return '';
+    const str = String(value).toLowerCase().trim();
+    // Remove common punctuation and extra spaces
+    return str.replace(/[,\s]+/g, '');
+  };
+
+  // Normalize a name (remove spaces, lowercase)
   const normalizeName = (name) => {
     if (!name) return '';
     return String(name).toLowerCase().replace(/\s+/g, '').trim();
@@ -67,47 +92,73 @@ export default function DuplicateCheckerTab() {
     return isNaN(parsed) ? '' : parsed.toFixed(2);
   };
 
-  // Extract full name from a row (handles multiple column combinations)
-  const extractFullName = (row) => {
-    const keys = Object.keys(row);
+  // Extract meaningful values from a row (skip empty values and common non-identifying fields)
+  const extractRowValues = (row) => {
+    const values = [];
+    const skipColumns = /^(id|index|row|date|timestamp|created|updated|status)/i;
 
-    // Try to find first name + surname combination (more flexible patterns)
-    const firstNameKey = keys.find(k =>
-      /^first|firstname|first.*name|forename|given.*name/i.test(k)
-    );
-    const surnameKey = keys.find(k =>
-      /^surname|^last|lastname|last.*name|family.*name/i.test(k)
-    );
+    Object.entries(row).forEach(([key, value]) => {
+      // Skip columns that are typically not identifying
+      if (skipColumns.test(key)) return;
 
-    if (firstNameKey && surnameKey) {
-      const firstName = String(row[firstNameKey] || '').trim();
-      const surname = String(row[surnameKey] || '').trim();
-      if (firstName || surname) {
-        return `${firstName} ${surname}`.trim();
+      const normalized = normalizeValue(value);
+      if (normalized && normalized.length > 0) {
+        values.push({
+          key,
+          original: value,
+          normalized
+        });
       }
-    }
+    });
 
-    // Try to find full name column
-    const fullNameKey = keys.find(k =>
-      /^name$|full.*name|employee.*name/i.test(k)
-    );
-
-    if (fullNameKey) {
-      return String(row[fullNameKey] || '').trim();
-    }
-
-    return '';
+    return values;
   };
 
-  // Extract LOC amount from a row
-  const extractLOC = (row) => {
-    const keys = Object.keys(row);
+  // Check if two rows are duplicates by comparing values field by field
+  const areRowsDuplicates = (rowA, rowB) => {
+    const valuesA = extractRowValues(rowA);
+    const valuesB = extractRowValues(rowB);
 
-    const locKey = keys.find(k =>
-      /loc|amount|value|cost|price/i.test(k)
-    );
+    if (valuesA.length === 0 || valuesB.length === 0) return { isDuplicate: false, matches: [] };
 
-    return locKey ? String(row[locKey] || '').trim() : '';
+    const matches = [];
+    let nameMatch = false;
+    let locMatch = false;
+
+    // Compare each value from A against all values from B
+    valuesA.forEach(valA => {
+      valuesB.forEach(valB => {
+        // Check for exact normalized match
+        if (valA.normalized === valB.normalized) {
+          matches.push({
+            keyA: valA.key,
+            keyB: valB.key,
+            value: valA.original
+          });
+
+          // Check if this looks like a name field
+          if (/name|first|last|surname|forename/i.test(valA.key) ||
+              /name|first|last|surname|forename/i.test(valB.key)) {
+            nameMatch = true;
+          }
+
+          // Check if this looks like a LOC/amount field
+          if (/loc|amount|value|cost|price/i.test(valA.key) ||
+              /loc|amount|value|cost|price/i.test(valB.key)) {
+            // Verify it's actually a number
+            const num = parseFloat(String(valA.original).replace(/[£$€,\s]/g, ''));
+            if (!isNaN(num)) {
+              locMatch = true;
+            }
+          }
+        }
+      });
+    });
+
+    // Consider it a duplicate if we have at least 2-3 matches including name
+    const isDuplicate = matches.length >= 2 && nameMatch;
+
+    return { isDuplicate, matches, nameMatch, locMatch };
   };
 
   // Find duplicates between the two datasets
@@ -117,53 +168,29 @@ export default function DuplicateCheckerTab() {
     setProcessing(true);
     const found = [];
 
-    // Create a map of normalized identifiers from file B
-    const mapB = new Map();
-    dataB.forEach((rowB, idxB) => {
-      const nameB = extractFullName(rowB);
-      const locB = extractLOC(rowB);
-
-      // Only require name to be present - LOC can be empty
-      if (nameB) {
-        const normalizedName = normalizeName(nameB);
-        const normalizedLOC = locB ? normalizeLOC(locB) : 'NOLOC';
-        const key = `${normalizedName}|${normalizedLOC}`;
-
-        if (!mapB.has(key)) {
-          mapB.set(key, []);
-        }
-        mapB.get(key).push({ row: rowB, index: idxB, name: nameB, loc: locB || 'N/A' });
-      }
-    });
-
-    // Check each row in file A against the map
+    // Compare each row in A against each row in B
     dataA.forEach((rowA, idxA) => {
-      const nameA = extractFullName(rowA);
-      const locA = extractLOC(rowA);
+      dataB.forEach((rowB, idxB) => {
+        const comparison = areRowsDuplicates(rowA, rowB);
 
-      // Only require name to be present - LOC can be empty
-      if (nameA) {
-        const normalizedName = normalizeName(nameA);
-        const normalizedLOC = locA ? normalizeLOC(locA) : 'NOLOC';
-        const key = `${normalizedName}|${normalizedLOC}`;
+        if (comparison.isDuplicate) {
+          // Extract display values for the matched fields
+          const displayMatches = comparison.matches.slice(0, 3); // Show first 3 matches
+          const matchSummary = displayMatches.map(m => `${m.value}`).join(', ');
 
-        if (mapB.has(key)) {
-          const matches = mapB.get(key);
-          matches.forEach(matchB => {
-            found.push({
-              rowA,
-              rowB: matchB.row,
-              indexA: idxA,
-              indexB: matchB.index,
-              nameA,
-              nameB: matchB.name,
-              locA: locA || 'N/A',
-              locB: matchB.loc,
-              sourceRow: sourceSelection === 'A' ? rowA : matchB.row
-            });
+          found.push({
+            rowA,
+            rowB,
+            indexA: idxA,
+            indexB: idxB,
+            matches: comparison.matches,
+            matchSummary,
+            nameMatch: comparison.nameMatch,
+            locMatch: comparison.locMatch,
+            sourceRow: sourceSelection === 'A' ? rowA : rowB
           });
         }
-      }
+      });
     });
 
     setDuplicates(found);
@@ -244,7 +271,7 @@ export default function DuplicateCheckerTab() {
           borderRadius: '8px',
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'space-between',
+          justifyContent: 'center',
           flexWrap: 'wrap',
           gap: '1rem'
         }}>
@@ -273,15 +300,21 @@ export default function DuplicateCheckerTab() {
               File B
             </label>
           </div>
+        </div>
+      )}
 
-          <button
-            className="btn btn-primary"
-            onClick={findDuplicates}
-            disabled={processing || !dataA || !dataB}
-            style={{ minWidth: '150px' }}
-          >
-            {processing ? 'Processing...' : '🔍 Find Duplicates'}
-          </button>
+      {/* Processing indicator */}
+      {processing && (
+        <div style={{
+          padding: '2rem',
+          textAlign: 'center',
+          color: 'var(--text-muted)',
+          background: 'var(--bg-secondary)',
+          borderRadius: '8px',
+          marginBottom: '2rem'
+        }}>
+          <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>🔍</div>
+          <p>Comparing rows...</p>
         </div>
       )}
 
@@ -305,27 +338,57 @@ export default function DuplicateCheckerTab() {
               <thead>
                 <tr>
                   <th style={{ width: '50px' }}>#</th>
-                  <th>Name (File A)</th>
-                  <th>LOC (File A)</th>
-                  <th>Name (File B)</th>
-                  <th>LOC (File B)</th>
-                  <th>Row A</th>
-                  <th>Row B</th>
+                  <th>Matching Fields</th>
+                  <th style={{ width: '100px' }}>Matches</th>
+                  <th style={{ width: '80px' }}>Row A</th>
+                  <th style={{ width: '80px' }}>Row B</th>
                 </tr>
               </thead>
               <tbody>
                 {duplicates.map((dup, idx) => (
                   <tr key={idx}>
                     <td style={{ color: 'var(--text-muted)' }}>{idx + 1}</td>
-                    <td>{dup.nameA}</td>
-                    <td>{dup.locA}</td>
-                    <td>{dup.nameB}</td>
-                    <td>{dup.locB}</td>
-                    <td style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-                      Row {dup.indexA + 1}
+                    <td>
+                      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        {dup.matches.slice(0, 4).map((match, mIdx) => (
+                          <span
+                            key={mIdx}
+                            style={{
+                              padding: '0.25rem 0.5rem',
+                              background: 'rgba(33, 150, 243, 0.1)',
+                              borderRadius: '4px',
+                              fontSize: '0.875rem',
+                              border: '1px solid rgba(33, 150, 243, 0.3)'
+                            }}
+                          >
+                            {String(match.value).substring(0, 20)}
+                            {String(match.value).length > 20 && '...'}
+                          </span>
+                        ))}
+                        {dup.matches.length > 4 && (
+                          <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+                            +{dup.matches.length - 4} more
+                          </span>
+                        )}
+                      </div>
                     </td>
-                    <td style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-                      Row {dup.indexB + 1}
+                    <td style={{ textAlign: 'center' }}>
+                      <span style={{
+                        padding: '0.25rem 0.5rem',
+                        background: 'var(--success)',
+                        borderRadius: '12px',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        color: 'white'
+                      }}>
+                        {dup.matches.length}
+                      </span>
+                    </td>
+                    <td style={{ color: 'var(--text-muted)', fontSize: '0.875rem', textAlign: 'center' }}>
+                      {dup.indexA + 1}
+                    </td>
+                    <td style={{ color: 'var(--text-muted)', fontSize: '0.875rem', textAlign: 'center' }}>
+                      {dup.indexB + 1}
                     </td>
                   </tr>
                 ))}
@@ -335,7 +398,7 @@ export default function DuplicateCheckerTab() {
         </div>
       )}
 
-      {fileA && fileB && duplicates.length === 0 && !processing && (
+      {fileA && fileB && duplicates.length === 0 && !processing && (dataA && dataB) && (
         <div style={{
           padding: '3rem',
           textAlign: 'center',
@@ -345,7 +408,7 @@ export default function DuplicateCheckerTab() {
         }}>
           <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>✓</div>
           <h3>No duplicates found</h3>
-          <p>The two files don't share any matching employees (by name and LOC amount)</p>
+          <p>The two files don't share any matching rows with at least 2 common fields including a name</p>
         </div>
       )}
     </div>
