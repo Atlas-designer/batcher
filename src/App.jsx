@@ -9,6 +9,7 @@ import ProcessManager from './components/ProcessManager';
 import ImportDialog from './components/ImportDialog';
 import AdminAdam from './components/AdminAdam';
 import EntityFinder from './components/EntityFinder';
+import DuplicateCheckerTab from './components/DuplicateCheckerTab';
 import InfoGuide from './components/InfoGuide';
 import { parseFile, parseAndCombinePDFs } from './utils/fileParser';
 import { extractCompanyAndEntity, generateOutputFilename } from './utils/filenameParser';
@@ -1173,6 +1174,12 @@ export default function App() {
               Entity Finder
             </button>
             <button
+              className={`tab ${currentTab === 'duplicates' ? 'active' : ''}`}
+              onClick={() => setCurrentTab('duplicates')}
+            >
+              Duplicate Checker
+            </button>
+            <button
               className={`tab ${currentTab === 'info' ? 'active' : ''}`}
               onClick={() => setCurrentTab('info')}
             >
@@ -1535,6 +1542,9 @@ export default function App() {
         ) : currentTab === 'entity' ? (
           /* Entity Finder Tab */
           <EntityFinder />
+        ) : currentTab === 'duplicates' ? (
+          /* Duplicate Checker Tab */
+          <DuplicateCheckerTab />
         ) : currentTab === 'info' ? (
           /* Info Guide Tab */
           <InfoGuide />

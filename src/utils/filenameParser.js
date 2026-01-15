@@ -12,6 +12,7 @@ const WORDS_TO_REMOVE = [
   'leavers', 'leaver', 'is leaver',
   'effective', 'approved', 'pending', 'active',
   'bikes', 'bike',
+  'changes', 'change',
   // Geographic
   'uk', 'roi', 'ireland', 'england', 'scotland', 'wales',
   // Business suffixes
