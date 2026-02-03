@@ -827,31 +827,60 @@ export default function ProcessEditor({
  */
 function autoSuggestMappings(sourceColumns) {
   const suggestions = {};
+  const usedColumns = new Set(); // Track columns already assigned
 
   // Common variations for each target field
   const patterns = {
     'Firstname': ['firstname', 'first name', 'first_name', 'forename', 'given name', 'employee first', '1st name'],
     'Surname': ['surname', 'last name', 'lastname', 'last_name', 'family name', 'employee last', '2nd name'],
+    'Email': ['email', 'e-mail', 'email address', 'e-mail address', 'employee email'],
     'Street1': ['street1', 'street 1', 'address1', 'address 1', 'address line 1', 'street address', 'address'],
     'Street2': ['street2', 'street 2', 'address2', 'address 2', 'address line 2'],
     'City': ['city', 'town', 'locality'],
     'County': ['county', 'state', 'region', 'province'],
     'Postcode': ['postcode', 'post code', 'postal code', 'zip', 'zip code', 'zipcode'],
-    'LOC Amount': ['loc amount', 'loc value', 'amount', 'value', 'voucher value', 'voucher amount', 'total', 'salary sacrifice', 'loc'],
-    'Email': ['email', 'e-mail', 'email address', 'e-mail address', 'employee email']
+    'LOC Amount': ['loc amount', 'loc value', 'amount', 'value', 'voucher value', 'voucher amount', 'total', 'salary sacrifice', 'loc']
   };
 
-  const sourceLower = sourceColumns.map(c => ({ original: c, lower: c.toLowerCase() }));
+  // Words that indicate a column should NOT be matched to address fields
+  const addressExclusions = ['email', 'e-mail', 'contact', 'web', 'url', 'ip'];
 
+  const sourceLower = sourceColumns.map(c => ({ original: c, lower: c.toLowerCase().trim() }));
+
+  // Pass 1: Exact matches only (highest confidence)
   Object.entries(patterns).forEach(([target, variations]) => {
+    if (suggestions[target]) return;
     for (const variation of variations) {
       const match = sourceLower.find(s =>
-        s.lower === variation ||
-        s.lower.includes(variation) ||
-        variation.includes(s.lower)
+        !usedColumns.has(s.original) && s.lower === variation
       );
-      if (match && !suggestions[target]) {
+      if (match) {
         suggestions[target] = match.original;
+        usedColumns.add(match.original);
+        break;
+      }
+    }
+  });
+
+  // Pass 2: Partial matches (lower confidence, with exclusions)
+  Object.entries(patterns).forEach(([target, variations]) => {
+    if (suggestions[target]) return;
+    const isAddressField = ['Street1', 'Street2', 'City', 'County', 'Postcode'].includes(target);
+
+    for (const variation of variations) {
+      const match = sourceLower.find(s => {
+        if (usedColumns.has(s.original)) return false;
+
+        // For address fields, reject columns containing email/contact keywords
+        if (isAddressField && addressExclusions.some(excl => s.lower.includes(excl))) {
+          return false;
+        }
+
+        return s.lower.includes(variation) || variation.includes(s.lower);
+      });
+      if (match) {
+        suggestions[target] = match.original;
+        usedColumns.add(match.original);
         break;
       }
     }

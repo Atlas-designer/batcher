@@ -183,6 +183,8 @@ export function applyMapping(sourceData, mapping, options = {}) {
       });
     }
 
+    // Track which source row this output row came from (for split-by-column)
+    outputRow._sourceIndex = rowIndex;
     outputRows.push(outputRow);
   });
 

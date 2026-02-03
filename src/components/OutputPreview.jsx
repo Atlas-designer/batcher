@@ -22,6 +22,7 @@ export default function OutputPreview({
   const [isCarMaintenance, setIsCarMaintenance] = useState(false);
   const [isPersonalGroup, setIsPersonalGroup] = useState(false);
   const [maxEmployees, setMaxEmployees] = useState(50);
+  const [splitByColumn, setSplitByColumn] = useState('');
 
   // Auto-detect car maintenance or personal group from source filename
   useEffect(() => {
@@ -142,6 +143,48 @@ export default function OutputPreview({
 
   const needsSplit = dataChunks.length > 1;
 
+  // Group output data by a source column value (for split-by-column feature)
+  const splitGroups = useMemo(() => {
+    if (!splitByColumn || !sourceData || !data) return null;
+
+    const groups = {};
+    // Each output row has _sourceIndex pointing back to its source row
+    data.forEach((outputRow) => {
+      const srcIdx = outputRow._sourceIndex;
+      const srcRow = srcIdx !== undefined ? sourceData[srcIdx] : null;
+      const groupValue = srcRow
+        ? String(srcRow[splitByColumn] || 'Unknown').trim()
+        : 'Unknown';
+
+      if (!groups[groupValue]) {
+        groups[groupValue] = [];
+      }
+      groups[groupValue].push(outputRow);
+    });
+
+    return groups;
+  }, [splitByColumn, sourceData, data]);
+
+  // Download all split-by-column files
+  const handleSplitDownloadAll = () => {
+    if (!splitGroups) return;
+    const dateStr = getDateStr();
+
+    Object.entries(splitGroups).forEach(([groupValue, rows]) => {
+      const cleanGroup = groupValue.replace(/[^a-zA-Z0-9\s\-&]/g, '').trim();
+      const downloadFilename = `${companyName} ${cleanGroup} ${dateStr}.csv`;
+      downloadCSV(rows, downloadFilename);
+    });
+  };
+
+  // Download a single split group
+  const handleSplitGroupDownload = (groupValue, rows) => {
+    const dateStr = getDateStr();
+    const cleanGroup = groupValue.replace(/[^a-zA-Z0-9\s\-&]/g, '').trim();
+    const downloadFilename = `${companyName} ${cleanGroup} ${dateStr}.csv`;
+    downloadCSV(rows, downloadFilename);
+  };
+
   if (!data || data.length === 0) {
     return (
       <div className="card">
@@ -200,6 +243,29 @@ export default function OutputPreview({
             }}
           />
         </label>
+        {sourceColumns && sourceColumns.length > 0 && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span style={{ fontWeight: 500 }}>Split by Column:</span>
+            <select
+              value={splitByColumn}
+              onChange={(e) => setSplitByColumn(e.target.value)}
+              style={{
+                padding: '0.25rem 0.5rem',
+                border: '1px solid var(--border)',
+                borderRadius: '4px',
+                fontSize: '0.875rem',
+                background: 'var(--bg-secondary)',
+                color: 'inherit',
+                maxWidth: '200px'
+              }}
+            >
+              <option value="">-- None --</option>
+              {sourceColumns.map((col, idx) => (
+                <option key={idx} value={col}>{col}</option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
 
       {/* Output Table */}
@@ -267,6 +333,59 @@ export default function OutputPreview({
           onProceed={handleProceedDecision}
           onRemoveDuplicates={onRemoveDuplicates}
         />
+
+        {/* Split by Column Results */}
+        {splitByColumn && splitGroups && Object.keys(splitGroups).length > 0 && (
+          <div style={{
+            margin: '1rem',
+            padding: '1rem',
+            background: 'rgba(33, 150, 243, 0.05)',
+            border: '1px solid rgba(33, 150, 243, 0.2)',
+            borderRadius: '8px'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h4 style={{ margin: 0 }}>
+                Split by "{splitByColumn}" — {Object.keys(splitGroups).length} group{Object.keys(splitGroups).length !== 1 ? 's' : ''}
+              </h4>
+              <button
+                className="btn btn-success"
+                onClick={handleSplitDownloadAll}
+              >
+                ⬇ Download All Split Files
+              </button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              {Object.entries(splitGroups).map(([groupValue, rows]) => (
+                <div
+                  key={groupValue}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '0.5rem 0.75rem',
+                    background: 'var(--bg-secondary)',
+                    borderRadius: '4px',
+                    border: '1px solid var(--border)'
+                  }}
+                >
+                  <div>
+                    <span style={{ fontWeight: 500 }}>{groupValue}</span>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginLeft: '0.75rem' }}>
+                      {rows.length} employee{rows.length !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+                  <button
+                    className="btn btn-success"
+                    style={{ fontSize: '0.8rem', padding: '0.25rem 0.75rem' }}
+                    onClick={() => handleSplitGroupDownload(groupValue, rows)}
+                  >
+                    ⬇ Download
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Download Button(s) */}
         <div className="action-bar">

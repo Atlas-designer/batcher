@@ -1506,7 +1506,7 @@ export default function App() {
                   onDownload={handleDownload}
                   filename={outputFilename}
                   onRemoveDuplicates={handleRemoveDuplicates}
-                  companyName={currentMapping?.companyName}
+                  companyName={currentMapping?.displayName || currentMapping?.companyName}
                   sourceFilename={sourceFile?.name}
                   sourceData={sourceData}
                   sourceColumns={sourceColumns}
