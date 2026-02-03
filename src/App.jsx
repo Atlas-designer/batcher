@@ -911,7 +911,7 @@ export default function App() {
     });
     setOutputData(result.data);
     setValidationErrors(result.validation);
-    setOutputFilename(generateOutputFilename(process.companyName));
+    setOutputFilename(generateOutputFilename(process.displayName || process.companyName));
     setCurrentMapping(process);
   };
 
@@ -980,7 +980,7 @@ export default function App() {
     });
     setOutputData(result.data);
     setValidationErrors(result.validation);
-    setOutputFilename(generateOutputFilename(processConfig.companyName));
+    setOutputFilename(generateOutputFilename(processConfig.displayName || processConfig.companyName));
     setCurrentMapping(processConfig);
     setCurrentStep(STEPS.PREVIEW);
     setLivePreviewData(null);
