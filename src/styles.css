@@ -1141,10 +1141,19 @@ select option {
 
 .incognito-mode input,
 .incognito-mode textarea,
-.incognito-mode select {
+.incognito-mode select,
+.incognito-mode select option {
   background: #ffffff !important;
   color: #323130 !important;
   border-color: #e1dfdd !important;
+}
+
+/* Fix target field dropdowns in process editor */
+.incognito-mode .card select,
+.incognito-mode [class*="field"] select,
+.incognito-mode [class*="output"] select {
+  color: #323130 !important;
+  -webkit-text-fill-color: #323130 !important;
 }
 
 .incognito-mode input:focus,
