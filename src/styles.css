@@ -1239,9 +1239,9 @@ select option {
 /* Force ALL text to be dark in incognito mode */
 .incognito-mode label,
 .incognito-mode p,
-.incognito-mode span,
+.incognito-mode span:not(.pa-toolbar-logo):not(.pa-toolbar-waffle):not(.pa-toolbar-search-icon):not(.pa-toolbar-search-text):not(.pa-toolbar-search-close),
 .incognito-mode h1,
-.incognito-mode h2,
+.incognito-mode h2:not(.pa-page-title),
 .incognito-mode h3,
 .incognito-mode h4,
 .incognito-mode h5,
@@ -1251,6 +1251,13 @@ select option {
 .incognito-mode .data-table td,
 .incognito-mode .data-table th {
   color: #323130 !important;
+}
+
+/* Keep Power Apps toolbar elements their proper colors */
+.incognito-mode .pa-toolbar-logo,
+.incognito-mode .pa-toolbar-waffle,
+.incognito-mode .pa-toolbar-hamburger {
+  color: #ffffff !important;
 }
 
 /* Muted text should be gray, not white */
