@@ -1236,6 +1236,71 @@ select option {
   border-radius: 2px;
 }
 
+/* Force ALL text to be dark in incognito mode */
+.incognito-mode label,
+.incognito-mode p,
+.incognito-mode span,
+.incognito-mode h1,
+.incognito-mode h2,
+.incognito-mode h3,
+.incognito-mode h4,
+.incognito-mode h5,
+.incognito-mode small,
+.incognito-mode strong,
+.incognito-mode .card-title,
+.incognito-mode .data-table td,
+.incognito-mode .data-table th {
+  color: #323130 !important;
+}
+
+/* Muted text should be gray, not white */
+.incognito-mode [style*="color: var(--text-muted)"],
+.incognito-mode [style*="color:var(--text-muted)"] {
+  color: #605e5c !important;
+}
+
+/* Ensure all inline style text colors are overridden */
+.incognito-mode .card p,
+.incognito-mode .card label,
+.incognito-mode .card span,
+.incognito-mode .card small {
+  color: #323130 !important;
+}
+
+/* Success/matched text */
+.incognito-mode [style*="color: var(--success)"],
+.incognito-mode [style*="color:var(--success)"] {
+  color: #107c10 !important;
+}
+
+/* Error text */
+.incognito-mode [style*="color: var(--error)"],
+.incognito-mode [style*="color:var(--error)"] {
+  color: #d13438 !important;
+}
+
+/* Primary colored text */
+.incognito-mode [style*="color: var(--primary)"],
+.incognito-mode [style*="color:var(--primary)"] {
+  color: #742774 !important;
+}
+
+/* Table header row colors - green for header info, light for data */
+.incognito-mode .data-table tr[style*="background: rgba(16, 185, 129"] td,
+.incognito-mode .data-table tr[style*="background:rgba(16, 185, 129"] td {
+  color: #065f46 !important;
+}
+
+.incognito-mode .data-table tr[style*="background: rgba(124, 58, 237"] td,
+.incognito-mode .data-table tr[style*="background:rgba(124, 58, 237"] td {
+  color: #5b21b6 !important;
+}
+
+/* Links in incognito */
+.incognito-mode a {
+  color: #742774 !important;
+}
+
 .incognito-mode .validation-panel {
   background: rgba(209, 52, 56, 0.05);
   border-color: #d13438;
