@@ -1167,6 +1167,15 @@ select option {
   color: #605e5c !important;
 }
 
+/* Fix mapping field text color in incognito mode */
+.incognito-mode .mapping-field {
+  color: #323130 !important;
+}
+
+.incognito-mode .mapping-field span {
+  color: #605e5c !important;
+}
+
 .incognito-mode input:focus,
 .incognito-mode textarea:focus,
 .incognito-mode select:focus {

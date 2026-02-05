@@ -453,7 +453,7 @@ export default function OutputPreview({
               <>
                 <button
                   className="btn btn-success"
-                  onClick={onDownload}
+                  onClick={() => handleChunkDownload(0)}
                 >
                   ⬇ Download CSV
                 </button>
