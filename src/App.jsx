@@ -1189,11 +1189,11 @@ export default function App() {
     sessionStorage.setItem('incognitoMode', String(next));
   };
 
-  // Update document title based on incognito mode
+  // Update document title and favicon based on incognito mode
   useEffect(() => {
     if (incognitoMode) {
       const titles = {
-        'process': 'Account: Active Accounts - Dynamics 365',
+        'process': 'Accounts: Active Accounts - Dynamics 365',
         'manage': 'Contacts: All Contacts - Dynamics 365',
         'duplicates': 'Activities: All Activities - Dynamics 365',
         'entity': 'Cases: Active Cases - Dynamics 365',
@@ -1205,6 +1205,26 @@ export default function App() {
       document.title = 'Batch Formatter';
     }
   }, [incognitoMode, currentTab]);
+
+  // Swap favicon for incognito mode
+  useEffect(() => {
+    const favicon = document.querySelector('link[rel="icon"]');
+    if (!favicon) return;
+
+    if (incognitoMode) {
+      const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">' +
+        '<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">' +
+        '<stop offset="0" stop-color="#742774"/>' +
+        '<stop offset="1" stop-color="#C34FBA"/>' +
+        '</linearGradient></defs>' +
+        '<path d="M16 2L30 16L16 30L2 16Z" fill="url(#g)"/>' +
+        '<path d="M16 8L24 16L16 24L8 16Z" fill="rgba(255,255,255,0.2)"/>' +
+        '</svg>';
+      favicon.href = 'data:image/svg+xml,' + encodeURIComponent(svg);
+    } else {
+      favicon.href = '/favicon.png';
+    }
+  }, [incognitoMode]);
 
   // Handle logout
   const handleLogout = () => {
