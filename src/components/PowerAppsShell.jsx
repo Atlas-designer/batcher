@@ -71,8 +71,15 @@ export default function PowerAppsShell({ children, currentTab, onTabChange, onTo
           >
             &#9776;
           </button>
-          <span className="pa-toolbar-waffle">&#9783;</span>
+          <span className="pa-toolbar-waffle">
+            <span className="pa-waffle-grid">
+              <span></span><span></span><span></span>
+              <span></span><span></span><span></span>
+              <span></span><span></span><span></span>
+            </span>
+          </span>
           <span className="pa-toolbar-logo">Power Apps</span>
+          <span className="pa-toolbar-app-name">|&nbsp; Salary Sacrifice Manager</span>
         </div>
         <div className="pa-toolbar-center">
           <div className="pa-toolbar-search" onClick={onToggleOff} title="Click to exit incognito">
