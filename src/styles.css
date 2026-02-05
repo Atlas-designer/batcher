@@ -1148,12 +1148,23 @@ select option {
   border-color: #e1dfdd !important;
 }
 
-/* Fix target field dropdowns in process editor */
+/* Fix target field dropdowns in process editor - always black text */
 .incognito-mode .card select,
 .incognito-mode [class*="field"] select,
-.incognito-mode [class*="output"] select {
+.incognito-mode [class*="output"] select,
+.incognito-mode select {
   color: #323130 !important;
   -webkit-text-fill-color: #323130 !important;
+  opacity: 1 !important;
+}
+
+/* Ensure placeholder/unselected options are also dark */
+.incognito-mode select option {
+  color: #323130 !important;
+}
+
+.incognito-mode select option:disabled {
+  color: #605e5c !important;
 }
 
 .incognito-mode input:focus,

@@ -24,6 +24,18 @@ export default function OutputPreview({
   const [maxEmployees, setMaxEmployees] = useState(50);
   const [splitByColumn, setSplitByColumn] = useState('');
 
+  // Date format toggle - persists for session, defaults to DD.MM.YY
+  const [dateFormat, setDateFormat] = useState(() => {
+    return sessionStorage.getItem('dateFormat') || 'short';
+  });
+
+  // Save date format preference to session storage
+  const toggleDateFormat = () => {
+    const newFormat = dateFormat === 'short' ? 'long' : 'short';
+    setDateFormat(newFormat);
+    sessionStorage.setItem('dateFormat', newFormat);
+  };
+
   // Auto-detect car maintenance or personal group from source filename
   useEffect(() => {
     if (sourceFilename) {
@@ -37,13 +49,32 @@ export default function OutputPreview({
     }
   }, [sourceFilename]);
 
-  // Get date string for filenames
+  // Get date string for filenames based on selected format
   const getDateStr = () => {
     const now = new Date();
-    const day = String(now.getDate()).padStart(2, '0');
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const year = String(now.getFullYear()).slice(-2);
-    return `${day}.${month}.${year}`;
+
+    if (dateFormat === 'long') {
+      // Format: "5th Feb 2026"
+      const day = now.getDate();
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const month = months[now.getMonth()];
+      const year = now.getFullYear();
+
+      // Add ordinal suffix (st, nd, rd, th)
+      const getOrdinal = (n) => {
+        const s = ['th', 'st', 'nd', 'rd'];
+        const v = n % 100;
+        return n + (s[(v - 20) % 10] || s[v] || s[0]);
+      };
+
+      return `${getOrdinal(day)} ${month} ${year}`;
+    } else {
+      // Format: "05.02.26" (default)
+      const day = String(now.getDate()).padStart(2, '0');
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const year = String(now.getFullYear()).slice(-2);
+      return `${day}.${month}.${year}`;
+    }
   };
 
   // Handle CSV download for a specific chunk
@@ -266,6 +297,23 @@ export default function OutputPreview({
             </select>
           </label>
         )}
+        <button
+          onClick={toggleDateFormat}
+          style={{
+            padding: '0.35rem 0.75rem',
+            border: '1px solid var(--border)',
+            borderRadius: '4px',
+            fontSize: '0.8rem',
+            background: 'var(--bg-secondary)',
+            color: 'var(--text)',
+            cursor: 'pointer',
+            fontWeight: 500,
+            whiteSpace: 'nowrap'
+          }}
+          title="Click to toggle date format in filenames"
+        >
+          Date Format: {dateFormat === 'short' ? 'DD.MM.YY' : 'Day Month Year'}
+        </button>
       </div>
 
       {/* Output Table */}
