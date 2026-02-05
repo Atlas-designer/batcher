@@ -11,6 +11,7 @@ import AdminAdam from './components/AdminAdam';
 import EntityFinder from './components/EntityFinder';
 import DuplicateCheckerTab from './components/DuplicateCheckerTab';
 import InfoGuide from './components/InfoGuide';
+import PowerAppsShell from './components/PowerAppsShell';
 import { parseFile, parseAndCombinePDFs } from './utils/fileParser';
 import { extractCompanyAndEntity, generateOutputFilename } from './utils/filenameParser';
 import { applyMapping, downloadCSV, OUTPUT_COLUMNS } from './utils/outputFormatter';
@@ -721,6 +722,11 @@ export default function App() {
   const [currentTab, setCurrentTab] = useState('process');
   const [currentStep, setCurrentStep] = useState(STEPS.UPLOAD);
 
+  // Incognito mode (Power Apps disguise)
+  const [incognitoMode, setIncognitoMode] = useState(() => {
+    return sessionStorage.getItem('incognitoMode') === 'true';
+  });
+
   // File data
   const [sourceFile, setSourceFile] = useState(null);
   const [rawRows, setRawRows] = useState(null);  // Raw data from file
@@ -738,6 +744,8 @@ export default function App() {
   const [detectedCompany, setDetectedCompany] = useState('');
   const [detectedEntity, setDetectedEntity] = useState('');
   const [matchedProcess, setMatchedProcess] = useState(null);
+  const [matchRejected, setMatchRejected] = useState(false);
+  const [showProcessPicker, setShowProcessPicker] = useState(false);
 
   // Mapping
   const [currentMapping, setCurrentMapping] = useState(null);
@@ -888,18 +896,27 @@ export default function App() {
     const companyName = configResult.companyName || detectedCompany;
     setDetectedCompany(companyName);
 
-    // Try to find a matching process
-    const matched = await findProcessByCompany(companyName);
-    if (matched) {
-      setMatchedProcess(matched);
-      setSelectedProcessId(matched.id);
-      // Check if we should auto-apply (if config matches)
-      applyProcessMapping(configResult.data, matched);
+    // If user rejected the match and chose "Create New", go to mapping
+    if (matchRejected && !matchedProcess) {
+      setSelectedProcessId('');
+      setCurrentStep(STEPS.MAPPING);
+    } else if (matchedProcess) {
+      // User picked a replacement process, or auto-match was accepted
+      applyProcessMapping(configResult.data, matchedProcess);
       setCurrentStep(STEPS.PREVIEW);
     } else {
-      setSelectedProcessId('');
-      // No match - go to mapping editor
-      setCurrentStep(STEPS.MAPPING);
+      // Try to find a matching process
+      const matched = await findProcessByCompany(companyName);
+      if (matched) {
+        setMatchedProcess(matched);
+        setSelectedProcessId(matched.id);
+        applyProcessMapping(configResult.data, matched);
+        setCurrentStep(STEPS.PREVIEW);
+      } else {
+        setSelectedProcessId('');
+        // No match - go to mapping editor
+        setCurrentStep(STEPS.MAPPING);
+      }
     }
   };
 
@@ -1073,6 +1090,8 @@ export default function App() {
       setDetectedEntity('');
       setMatchedProcess(null);
       setSelectedProcessId('');
+      setMatchRejected(false);
+      setShowProcessPicker(false);
       setCurrentMapping(null);
       setOutputData(null);
       setValidationErrors([]);
@@ -1109,6 +1128,8 @@ export default function App() {
     setDetectedEntity('');
     setMatchedProcess(null);
     setSelectedProcessId('');
+    setMatchRejected(false);
+    setShowProcessPicker(false);
     setCurrentMapping(null);
     setOutputData(null);
     setValidationErrors([]);
@@ -1136,6 +1157,55 @@ export default function App() {
     }
   };
 
+  // Handle rejecting an auto-matched process
+  const handleRejectMatch = () => {
+    setMatchedProcess(null);
+    setSelectedProcessId('');
+    setMatchRejected(true);
+    setShowProcessPicker(true);
+  };
+
+  // Handle picking a process from the rejection picker
+  const handlePickProcess = (processId) => {
+    if (processId === '' || processId === 'new') {
+      setMatchedProcess(null);
+      setSelectedProcessId('');
+      setShowProcessPicker(false);
+    } else {
+      const selected = processes.find(p => p.id === processId);
+      if (selected) {
+        setMatchedProcess(selected);
+        setSelectedProcessId(selected.id);
+        setMatchRejected(false);
+      }
+      setShowProcessPicker(false);
+    }
+  };
+
+  // Toggle incognito mode
+  const handleToggleIncognito = () => {
+    const next = !incognitoMode;
+    setIncognitoMode(next);
+    sessionStorage.setItem('incognitoMode', String(next));
+  };
+
+  // Update document title based on incognito mode
+  useEffect(() => {
+    if (incognitoMode) {
+      const titles = {
+        'process': 'Account: Active Accounts - Dynamics 365',
+        'manage': 'Contacts: All Contacts - Dynamics 365',
+        'duplicates': 'Activities: All Activities - Dynamics 365',
+        'entity': 'Cases: Active Cases - Dynamics 365',
+        'adam': 'Knowledge Articles - Dynamics 365',
+        'info': 'Reports - Dynamics 365'
+      };
+      document.title = titles[currentTab] || 'Dynamics 365';
+    } else {
+      document.title = 'Batch Formatter';
+    }
+  }, [incognitoMode, currentTab]);
+
   // Handle logout
   const handleLogout = () => {
     logout();
@@ -1147,57 +1217,8 @@ export default function App() {
     return <Login onLogin={() => setAuthenticated(true)} />;
   }
 
-  return (
-    <div className="app-container">
-      {/* Header */}
-      <header className="header">
-        <h1><img src="/robot.GIF" alt="" style={{ width: '32px', height: '32px', verticalAlign: 'middle', marginRight: '0.5rem' }} />Batch Formatter</h1>
-        <div className="header-nav">
-          <div className="tabs" style={{ border: 'none', marginBottom: 0 }}>
-            <button
-              className={`tab ${currentTab === 'process' ? 'active' : ''}`}
-              onClick={() => setCurrentTab('process')}
-            >
-              Process File
-            </button>
-            <button
-              className={`tab ${currentTab === 'manage' ? 'active' : ''}`}
-              onClick={() => setCurrentTab('manage')}
-            >
-              Manage Processes
-            </button>
-            <button
-              className={`tab ${currentTab === 'adam' ? 'active' : ''}`}
-              onClick={() => setCurrentTab('adam')}
-            >
-              Admin Adam
-            </button>
-            <button
-              className={`tab ${currentTab === 'entity' ? 'active' : ''}`}
-              onClick={() => setCurrentTab('entity')}
-            >
-              Entity Finder
-            </button>
-            <button
-              className={`tab ${currentTab === 'duplicates' ? 'active' : ''}`}
-              onClick={() => setCurrentTab('duplicates')}
-            >
-              Duplicate Checker
-            </button>
-            <button
-              className={`tab ${currentTab === 'info' ? 'active' : ''}`}
-              onClick={() => setCurrentTab('info')}
-            >
-              Info
-            </button>
-          </div>
-          <button className="btn btn-secondary" onClick={handleLogout}>
-            Logout
-          </button>
-        </div>
-      </header>
-
-      {/* Main Content */}
+  const mainContent = (
+    <>
       <main className="main-content">
         {error && (
           <div className="validation-panel" style={{ marginBottom: '1rem' }}>
@@ -1259,13 +1280,75 @@ export default function App() {
                     )}
                   </p>
                   {matchedProcess && (
-                    <p style={{ color: 'var(--success)', marginTop: '0.5rem' }}>
+                    <p style={{ color: 'var(--success)', marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                       Matched to saved process: <strong>{matchedProcess.displayName || matchedProcess.companyName}</strong>
                       {matchedProcess.dataConfig?.startRow && (
-                        <span style={{ marginLeft: '0.5rem', fontSize: '0.875rem' }}>
+                        <span style={{ fontSize: '0.875rem' }}>
                           (Row {matchedProcess.dataConfig.startRow} saved)
                         </span>
                       )}
+                      <button
+                        onClick={handleRejectMatch}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--text-muted)',
+                          cursor: 'pointer',
+                          fontSize: '0.8rem',
+                          textDecoration: 'underline',
+                          padding: '0.125rem 0.25rem'
+                        }}
+                      >
+                        Wrong match?
+                      </button>
+                    </p>
+                  )}
+
+                  {showProcessPicker && (
+                    <div style={{ marginTop: '0.75rem', padding: '1rem', background: 'var(--bg-secondary)', borderRadius: '0.5rem', border: '1px solid var(--border)' }}>
+                      <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>
+                        Select the correct process:
+                      </label>
+                      <select
+                        value={selectedProcessId}
+                        onChange={(e) => handlePickProcess(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '0.5rem',
+                          border: '1px solid var(--border)',
+                          borderRadius: '0.375rem',
+                          fontSize: '0.875rem'
+                        }}
+                      >
+                        <option value="">-- Choose a process --</option>
+                        <option value="new">+ Create New Process</option>
+                        {processes.map(p => (
+                          <option key={p.id} value={p.id}>
+                            {p.displayName || p.companyName}
+                            {p.displayName && p.displayName !== p.companyName ? ` (${p.companyName})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {matchRejected && !showProcessPicker && !matchedProcess && (
+                    <p style={{ color: 'var(--text-muted)', marginTop: '0.5rem', fontSize: '0.875rem' }}>
+                      No process selected. A new mapping will be created.
+                      <button
+                        onClick={() => setShowProcessPicker(true)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--primary)',
+                          cursor: 'pointer',
+                          fontSize: '0.8rem',
+                          textDecoration: 'underline',
+                          marginLeft: '0.5rem'
+                        }}
+                      >
+                        Search processes
+                      </button>
                     </p>
                   )}
                 </div>
@@ -1564,6 +1647,81 @@ export default function App() {
           onCancel={handleImportComplete}
         />
       </main>
+    </>
+  );
+
+  return (
+    <div className={`app-container ${incognitoMode ? 'incognito-mode' : ''}`}>
+      {/* Incognito Toggle */}
+      <button
+        className="incognito-toggle"
+        onClick={handleToggleIncognito}
+        title={incognitoMode ? 'Exit Incognito' : 'Incognito Mode'}
+      >
+        {incognitoMode ? '🔓' : '🕶️'}
+      </button>
+
+      {incognitoMode ? (
+        <PowerAppsShell
+          currentTab={currentTab}
+          onTabChange={setCurrentTab}
+          onToggleOff={handleToggleIncognito}
+        >
+          {mainContent}
+        </PowerAppsShell>
+      ) : (
+        <>
+          {/* Header */}
+          <header className="header">
+            <h1><img src="/robot.GIF" alt="" style={{ width: '32px', height: '32px', verticalAlign: 'middle', marginRight: '0.5rem' }} />Batch Formatter</h1>
+            <div className="header-nav">
+              <div className="tabs" style={{ border: 'none', marginBottom: 0 }}>
+                <button
+                  className={`tab ${currentTab === 'process' ? 'active' : ''}`}
+                  onClick={() => setCurrentTab('process')}
+                >
+                  Process File
+                </button>
+                <button
+                  className={`tab ${currentTab === 'manage' ? 'active' : ''}`}
+                  onClick={() => setCurrentTab('manage')}
+                >
+                  Manage Processes
+                </button>
+                <button
+                  className={`tab ${currentTab === 'adam' ? 'active' : ''}`}
+                  onClick={() => setCurrentTab('adam')}
+                >
+                  Admin Adam
+                </button>
+                <button
+                  className={`tab ${currentTab === 'entity' ? 'active' : ''}`}
+                  onClick={() => setCurrentTab('entity')}
+                >
+                  Entity Finder
+                </button>
+                <button
+                  className={`tab ${currentTab === 'duplicates' ? 'active' : ''}`}
+                  onClick={() => setCurrentTab('duplicates')}
+                >
+                  Duplicate Checker
+                </button>
+                <button
+                  className={`tab ${currentTab === 'info' ? 'active' : ''}`}
+                  onClick={() => setCurrentTab('info')}
+                >
+                  Info
+                </button>
+              </div>
+              <button className="btn btn-secondary" onClick={handleLogout}>
+                Logout
+              </button>
+            </div>
+          </header>
+
+          {mainContent}
+        </>
+      )}
     </div>
   );
 }
