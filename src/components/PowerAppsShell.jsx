@@ -69,6 +69,7 @@ export default function PowerAppsShell({ children, currentTab, onTabChange, onTo
           <div className="pa-toolbar-search" onClick={onToggleOff} title="Click to exit incognito">
             <span className="pa-toolbar-search-icon">&#x1F50D;</span>
             <span className="pa-toolbar-search-text">Search</span>
+            <span className="pa-toolbar-search-close">&times;</span>
           </div>
         </div>
         <div className="pa-toolbar-right">
