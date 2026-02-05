@@ -1193,14 +1193,14 @@ export default function App() {
   useEffect(() => {
     if (incognitoMode) {
       const titles = {
-        'process': 'Accounts: Active Accounts - Dynamics 365',
-        'manage': 'Contacts: All Contacts - Dynamics 365',
-        'duplicates': 'Activities: All Activities - Dynamics 365',
-        'entity': 'Cases: Active Cases - Dynamics 365',
-        'adam': 'Knowledge Articles - Dynamics 365',
-        'info': 'Reports - Dynamics 365'
+        'process': 'Accounts: Active Accounts - Power Apps',
+        'manage': 'Contacts: All Contacts - Power Apps',
+        'duplicates': 'Activities: All Activities - Power Apps',
+        'entity': 'Cases: Active Cases - Power Apps',
+        'adam': 'Knowledge Articles - Power Apps',
+        'info': 'Reports - Power Apps'
       };
-      document.title = titles[currentTab] || 'Dynamics 365';
+      document.title = titles[currentTab] || 'Power Apps';
     } else {
       document.title = 'Batch Formatter';
     }

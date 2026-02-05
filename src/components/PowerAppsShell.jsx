@@ -12,6 +12,12 @@ const NAV_ITEMS = [
   { id: 'cases', label: 'Cases', icon: '\u2609', tab: 'entity' },
   { id: 'knowledge', label: 'Knowledge Articles', icon: '\u2630', tab: 'adam' },
   { id: 'reports', label: 'Reports', icon: '\u25A6', tab: 'info' },
+  { id: 'divider2', divider: true },
+  { id: 'c2wgroup', label: 'Cycle 2 Work', isHeader: true },
+  { id: 'newapps', label: 'New Applications', icon: '\u2795', tab: null, decorative: true },
+  { id: 'issuedlocs', label: 'Issued LOCs', icon: '\u2713', tab: null, decorative: true },
+  { id: 'locpurchases', label: 'LOC Purchases', icon: '\u20A4', tab: null, decorative: true },
+  { id: 'bpuploads', label: 'BP File Uploads', icon: '\u2191', tab: null, decorative: true },
 ];
 
 const PAGE_TITLES = {
@@ -47,7 +53,7 @@ export default function PowerAppsShell({ children, currentTab, onTabChange, onTo
 
   return (
     <div className="pa-shell">
-      {/* Top Toolbar - Dynamics 365 style */}
+      {/* Top Toolbar - Power Apps style */}
       <div className="pa-toolbar">
         <div className="pa-toolbar-left">
           <button
@@ -57,20 +63,15 @@ export default function PowerAppsShell({ children, currentTab, onTabChange, onTo
             &#9776;
           </button>
           <span className="pa-toolbar-waffle">&#9783;</span>
-          <span className="pa-toolbar-logo">Dynamics 365</span>
-          <span className="pa-toolbar-divider-v" />
-          <span className="pa-toolbar-app-name">Sales Hub</span>
+          <span className="pa-toolbar-logo">Power Apps</span>
         </div>
         <div className="pa-toolbar-center">
-          <span className="pa-toolbar-toggle" onClick={onToggleOff} title="Try the new look">
-            Try the new look
-            <span className="pa-toggle-switch">
-              <span className="pa-toggle-knob" />
-            </span>
-          </span>
+          <div className="pa-toolbar-search" onClick={onToggleOff} title="Click to exit incognito">
+            <span className="pa-toolbar-search-icon">&#x1F50D;</span>
+            <span className="pa-toolbar-search-text">Search</span>
+          </div>
         </div>
         <div className="pa-toolbar-right">
-          <button className="pa-toolbar-icon-btn" title="Search">&#x2315;</button>
           <button className="pa-toolbar-icon-btn" title="Settings">&#x2699;</button>
           <button className="pa-toolbar-icon-btn" title="Help">?</button>
           <div className="pa-toolbar-avatar">AU</div>
