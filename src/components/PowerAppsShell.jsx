@@ -18,6 +18,15 @@ const NAV_ITEMS = [
   { id: 'issuedlocs', label: 'Issued LOCs', icon: '\u2713', tab: null, decorative: true },
   { id: 'locpurchases', label: 'LOC Purchases', icon: '\u20A4', tab: null, decorative: true },
   { id: 'bpuploads', label: 'BP File Uploads', icon: '\u2191', tab: null, decorative: true },
+  { id: 'divider3', divider: true },
+  { id: 'companiesgroup', label: 'Companies', isHeader: true },
+  { id: 'account', label: 'Account', icon: '\u25A3', tab: null, decorative: true },
+  { id: 'regcompanies', label: 'Registered Companies', icon: '\u2713', tab: null, decorative: true },
+  { id: 'pendingcompanies', label: 'Pending Companies', icon: '\u23F3', tab: null, decorative: true },
+  { id: 'invitations', label: 'Invitations', icon: '\u2709', tab: null, decorative: true },
+  { id: 'benefitproviders', label: 'Benefit Providers', icon: '\u2605', tab: null, decorative: true },
+  { id: 'ibds', label: "IBD's", icon: '\u26D2', tab: null, decorative: true },
+  { id: 'notes', label: 'Notes', icon: '\u270E', tab: null, decorative: true },
 ];
 
 const PAGE_TITLES = {
